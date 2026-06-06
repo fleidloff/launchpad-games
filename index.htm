@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Launchpad X Game Station</title>
+    <script src="https://cdn.jsdelivr.net/npm/webmidi@3.1.8/dist/iife/webmidi.iife.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; padding: 20px; }
+        #status { font-weight: bold; padding: 10px; margin: 20px; border-radius: 5px; display: inline-block; }
+        .connected { background: #1b5e20; }
+        .disconnected { background: #b71c1c; }
+    </style>
+</head>
+<body>
+
+    <h1>Launchpad X Retro Engine 🕹️</h1>
+    <div id="status" class="disconnected">Waiting for Launchpad X...</div>
+    <p>Connect your Launchpad X and press any pad to test.</p>
+
+    <script type="module">
+        let lpInput = null;
+        let lpOutput = null;
+
+        // Initialize WebMidi
+        WebMidi.enable({ sysex: true }) // SysEx is REQUIRED to switch Launchpad modes
+            .then(onEnabled)
+            .catch(err => {
+                document.getElementById("status").innerText = "Web MIDI not supported/allowed.";
+                console.error(err);
+            });
+
+        function onEnabled() {
+            // Watch for device connections/disconnections
+            WebMidi.addListener("connected", checkDevices);
+            WebMidi.addListener("disconnected", checkDevices);
+            checkDevices();
+        }
+
+        function checkDevices() {
+            // Find Launchpad X Ports (Look for "Launchpad X" in the name)
+            lpInput = WebMidi.inputs.find(i => i.name.includes("Launchpad X"));
+            lpOutput = WebMidi.outputs.find(o => o.name.includes("Launchpad X"));
+
+            const statusDiv = document.getElementById("status");
+
+            if (lpInput && lpOutput) {
+                statusDiv.innerText = "Launchpad X Connected!";
+                statusDiv.className = "connected";
+                
+                initLaunchpad();
+            } else {
+                statusDiv.innerText = "Launchpad X Not Found";
+                statusDiv.className = "disconnected";
+            }
+        }
+
+        function initLaunchpad() {
+            // 1. Enter Programmer Mode (SysEx sequence from Novation's Spec)
+            // [Manufacturer ID, Device ID, Command, Mode (03 = Programmer)]
+            lpOutput.sendSysex([0x00, 0x20, 0x29], [0x02, 0x0C, 0x0E, 0x03]);
+
+            // 2. Clear any lingering LEDs
+            clearGrid();
+
+            // 3. Listen for Pad Presses
+            // Launchpad X uses 'noteon' for the 8x8 grid and 'controlchange' for top/side buttons
+            lpInput.removeListener(); // Clear old listeners if re-connecting
+            
+            lpInput.addListener("noteon", (e) => {
+                const padId = e.note.number; 
+                const velocity = e.rawVelocity; // How hard it was pressed (0-127)
+                
+                if (velocity > 0) {
+                    handlePadPress(padId);
+                }
+            });
+            
+            // Light up a greeting dot in the middle (Pad 55, Color 9 = Bright Red)
+            setLED(55, 9);
+        }
+
+        // Helper: Light up a pad
+        // colorCode: 0-127 (Novation Palette index. e.g., 5=Red, 9=Orange, 21=Green, 37=Blue)
+        function setLED(padId, colorCode) {
+            if (!lpOutput) return;
+            // In Programmer Mode, sending a note message to a Pad ID changes its color
+            lpOutput.channels[1].sendNoteOn(padId, { rawAttack: colorCode });
+        }
+
+        // Helper: Clear entire grid
+        function clearGrid() {
+            if (!lpOutput) return;
+            for (let i = 11; i <= 99; i++) {
+                setLED(i, 0); // 0 turns LED off
+            }
+        }
+
+        // Basic Game Logic Entrypoint
+        function handlePadPress(padId) {
+            console.log(`Pressed pad: ${padId}`);
+            
+            // Example: "Toggle/Draw" effect. Light up whatever pad you press green!
+            setLED(padId, 21);
+        }
+    </script>
+</body>
+</html>
