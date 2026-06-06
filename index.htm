@@ -17,27 +17,10 @@
     <h1>Launchpad X Retro Engine 🕹️</h1>
     <div id="status" class="disconnected">Waiting for Launchpad X...</div>
     <p>Connect your Launchpad X and press any pad to test.</p>
-    <button id="connect-btn" style="padding: 10px 20px; font-size: 16px; margin: 10px;">
-        🔄 Re-Connect Launchpad
-    </button>
 
     <script type="module">
         let lpInput = null;
         let lpOutput = null;
-
-        document.getElementById("connect-btn").addEventListener("click", async () => {
-            console.log("Forcing MIDI Reset...");
-            
-            // 1. Kill any existing WebMidi state
-            if (WebMidi.enabled) {
-                await WebMidi.disable();
-            }
-            
-            // 2. Re-enable clean from scratch
-            WebMidi.enable({ sysex: true })
-                .then(onEnabled)
-                .catch(err => console.error("Reset failed: ", err));
-        });
 
         // Initialize WebMidi
         WebMidi.enable({ sysex: true }) // SysEx is REQUIRED to switch Launchpad modes
@@ -46,7 +29,7 @@
                 document.getElementById("status").innerText = "Web MIDI not supported/allowed.";
                 console.error(err);
             });
-            
+
         function onEnabled() {
             // Watch for device connections/disconnections
             WebMidi.addListener("connected", checkDevices);
@@ -83,6 +66,14 @@
             }
         }
 
+        // A simple object where the key is the Pad ID (e.g., 11) and the value is the Color Code (0-127)
+        const launchpadState = {};
+
+        // Initialize all possible pads (11 to 99) to 0 (off)
+        for (let i = 11; i <= 99; i++) {
+            launchpadState[i] = 0;
+        }
+
         function initLaunchpad() {
             // 1. Enter Programmer Mode (SysEx sequence from Novation's Spec)
             // [Manufacturer ID, Device ID, Command, Mode (03 = Programmer)]
@@ -100,36 +91,92 @@
                 const velocity = e.rawVelocity; // How hard it was pressed (0-127)
                 
                 if (velocity > 0) {
-                    handlePadPress(padId);
+                    handlePadPress(padId, velocity);
                 }
             });
             
-            // Light up a greeting dot in the middle (Pad 55, Color 9 = Bright Red)
-            setLED(55, 9);
+            updatePad(99, 21);
+
         }
 
-        // Helper: Light up a pad
-        // colorCode: 0-127 (Novation Palette index. e.g., 5=Red, 9=Orange, 21=Green, 37=Blue)
-        function setLED(padId, colorCode) {
+        function updatePad(padId, colorCode) {
+            // 1. Update our local virtual memory
+            launchpadState[padId] = colorCode;
+
+            // 2. Send the physical MIDI command to the Launchpad
             if (!lpOutput) return;
-            // In Programmer Mode, sending a note message to a Pad ID changes its color
-            lpOutput.channels[1].sendNoteOn(padId, { rawAttack: colorCode });
+            
+            if (padId >= 91 && padId <= 99) {
+                lpOutput.channels[1].sendControlChange(padId, colorCode);
+            } else {
+                lpOutput.channels[1].sendNoteOn(padId, { rawAttack: colorCode });
+            }
         }
+
+        function setRGB(padId, r, g, b) {
+            if (!lpOutput) return;
+            launchpadState[padId] = [r, g, b];
+
+
+            // 1. Map standard button positions to internal SysEx indices
+            let sysExIndex = padId;
+            if (padId === 99) sysExIndex = 1;   // Up Arrow
+            if (padId === 91) sysExIndex = 2;   // Down Arrow
+            if (padId === 92) sysExIndex = 3;   // Left Arrow
+            if (padId === 93) sysExIndex = 4;   // Right Arrow
+            if (padId === 94) sysExIndex = 5;   // Session
+            if (padId === 95) sysExIndex = 6;   // Note
+            if (padId === 96) sysExIndex = 7;   // Custom
+            if (padId === 97) sysExIndex = 8;   // Volume
+            if (padId === 98) sysExIndex = 9;   // Pan
+            if (padId === 89) sysExIndex = 19;  // Novation Logo
+
+            // 2. Build the exact Novation SysEx spec structure
+            const rawMessage = [
+                0xF0,               // SysEx Start
+                0x00, 0x20, 0x29,   // Novation Manufacturer ID
+                0x02,               // Device ID (Launchpad X Spec)
+                0x0C,               // Launchpad X Command API Sub-ID
+                0x03,               // Base Command: LED Control Mode
+                
+                // --- THE MISSING LAYER ---
+                0x03,               // Lighting Type (0x03 explicitly means "Raw RGB Mode")
+                
+                sysExIndex,         // Hardware Pad Index Location
+                r,                  // Red Intensity (0 to 127)
+                g,                  // Green Intensity (0 to 127)
+                b,                  // Blue Intensity (0 to 127)
+                
+                0xF7                // SysEx End
+            ];
+
+            // Fire it over the raw connection
+            lpOutput.send(rawMessage);
+        } 
+
 
         // Helper: Clear entire grid
         function clearGrid() {
             if (!lpOutput) return;
             for (let i = 11; i <= 99; i++) {
-                setLED(i, 0); // 0 turns LED off
+                updatePad(i, 0); // 0 turns LED off
             }
         }
 
         // Basic Game Logic Entrypoint
-        function handlePadPress(padId) {
+        function handlePadPress(padId, velocity) {
             console.log(`Pressed pad: ${padId}`);
             
-            // Example: "Toggle/Draw" effect. Light up whatever pad you press green!
-            setLED(padId, 21);
+            const currentColor = launchpadState[padId];
+
+            if (currentColor === 0) {
+                console.log(`Pad ${padId} was OFF. Turning it Green.`);
+                setRGB(padId, 0, velocity, 0);
+                //updatePad(padId, 21)
+            } else {
+                console.log(`Pad ${padId} was already ON (Color: ${currentColor}). Turning it OFF.`);
+                updatePad(padId, 0);   // 0 = Off
+            }
         }
     </script>
 </body>
