@@ -17,10 +17,27 @@
     <h1>Launchpad X Retro Engine 🕹️</h1>
     <div id="status" class="disconnected">Waiting for Launchpad X...</div>
     <p>Connect your Launchpad X and press any pad to test.</p>
+    <button id="connect-btn" style="padding: 10px 20px; font-size: 16px; margin: 10px;">
+        🔄 Re-Connect Launchpad
+    </button>
 
     <script type="module">
         let lpInput = null;
         let lpOutput = null;
+
+        document.getElementById("connect-btn").addEventListener("click", async () => {
+            console.log("Forcing MIDI Reset...");
+            
+            // 1. Kill any existing WebMidi state
+            if (WebMidi.enabled) {
+                await WebMidi.disable();
+            }
+            
+            // 2. Re-enable clean from scratch
+            WebMidi.enable({ sysex: true })
+                .then(onEnabled)
+                .catch(err => console.error("Reset failed: ", err));
+        });
 
         // Initialize WebMidi
         WebMidi.enable({ sysex: true }) // SysEx is REQUIRED to switch Launchpad modes
@@ -29,7 +46,7 @@
                 document.getElementById("status").innerText = "Web MIDI not supported/allowed.";
                 console.error(err);
             });
-
+            
         function onEnabled() {
             // Watch for device connections/disconnections
             WebMidi.addListener("connected", checkDevices);
@@ -37,8 +54,10 @@
             checkDevices();
         }
 
+        // A safety flag to prevent spamming the Launchpad with commands
+        let isInitialized = false;
+
         function checkDevices() {
-            // Find Launchpad X Ports (Look for "Launchpad X" in the name)
             lpInput = WebMidi.inputs.find(i => i.name.includes("Launchpad X"));
             lpOutput = WebMidi.outputs.find(o => o.name.includes("Launchpad X"));
 
@@ -48,10 +67,19 @@
                 statusDiv.innerText = "Launchpad X Connected!";
                 statusDiv.className = "connected";
                 
-                initLaunchpad();
+                // Only initialize if we haven't already done so for this session
+                if (!isInitialized) {
+                    // A tiny 100ms timeout gives the hardware a split second 
+                    // to clear its throat after a browser page refresh
+                    setTimeout(() => {
+                        initLaunchpad();
+                        isInitialized = true;
+                    }, 100);
+                }
             } else {
                 statusDiv.innerText = "Launchpad X Not Found";
                 statusDiv.className = "disconnected";
+                isInitialized = false; // Reset flag so it can re-init if replugged
             }
         }
 
