@@ -1,4 +1,4 @@
-import { WebMidi } from "./vendor/webmidi.esm.min.js";
+import { WebMidi } from "webmidi";
 
 let lpInput = null;
 let lpOutput = null;
