@@ -1,7 +1,5 @@
 Build Tools
 
-- structure code
-
 First Game
 
 - build 1st simple game

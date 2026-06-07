@@ -1,11 +1,10 @@
 import { lpOutput } from "./midi";
-import {
-  NOVATION_ID,
-  LAUNCHPAD_X_ID,
-  CMD_API_SUB_ID,
-  CMD_LED_CONTROL,
-  LIGHTING_RGB,
-  PAD_TO_SYSEX,
+import { 
+  NOVATION_ID, 
+  LAUNCHPAD_X_ID, 
+  CMD_API_SUB_ID, 
+  CMD_LED_CONTROL, 
+  LIGHTING_RGB
 } from "./constants";
 import type { Color, RGB, FlashingState } from "./types";
 
@@ -25,7 +24,6 @@ export function enterProgrammerMode(): void {
 
 function sendRGB(padId: number, r: number, g: number, b: number): void {
   if (!lpOutput) return;
-  let sysExIndex = PAD_TO_SYSEX[padId] ?? padId;
 
   const rawMessage = [
     0xf0, // SysEx Start
@@ -34,7 +32,7 @@ function sendRGB(padId: number, r: number, g: number, b: number): void {
     CMD_API_SUB_ID,
     CMD_LED_CONTROL,
     LIGHTING_RGB,
-    sysExIndex,
+    padId, // On Launchpad X Programmer Mode, the LED index matches the Note/CC number
     r,
     g,
     b,
@@ -43,6 +41,7 @@ function sendRGB(padId: number, r: number, g: number, b: number): void {
 
   lpOutput.send(rawMessage);
 }
+
 
 export function setRGB(
   padId: number,
