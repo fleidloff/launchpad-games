@@ -8,6 +8,8 @@ import { fingerTwister } from "./apps/Twister/twister";
 import { reflexStorm } from "./apps/ReflexStorm/reflexStorm";
 import { requestWakeLock } from "./util/wakeLock";
 import { matrixClock } from "./apps/MatrixClock/matrixClock";
+import { weatherStation } from "./apps/Weather/weather";
+import { fireplace } from "./apps/Fireplace/firePlace";
 
 requestWakeLock();
 
