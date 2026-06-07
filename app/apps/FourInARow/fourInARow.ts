@@ -53,7 +53,7 @@ export async function handleColumnSelect(col: number): Promise<void> {
   // Find the lowest empty row
   let targetRow = -1;
   for (let r = 0; r < ROWS; r++) {
-    if (board[r][col] === 0) {
+    if (board[r]?.[col] === 0) {
       targetRow = r;
       break;
     }
@@ -70,7 +70,10 @@ export async function handleColumnSelect(col: number): Promise<void> {
     return;
   }
 
-  board[targetRow][col] = currentPlayer;
+  const rowArr = board[targetRow];
+  if (rowArr) {
+    rowArr[col] = currentPlayer;
+  }
 
   const winningLine = checkWin(targetRow, col);
   if (winningLine) {
@@ -109,8 +112,10 @@ export async function animateFall(
 }
 
 export function checkWin(row: number, col: number): [number, number][] | null {
-  const player = board[row][col];
-  const directions = [
+  const player = board[row]?.[col];
+  if (player === undefined || player === 0) return null;
+
+  const directions: [number, number][] = [
     [0, 1], // Horizontal
     [1, 0], // Vertical
     [1, 1], // Diagonal \
@@ -129,7 +134,7 @@ export function checkWin(row: number, col: number): [number, number][] | null {
         nr < ROWS &&
         nc >= 0 &&
         nc < COLS &&
-        board[nr][nc] === player
+        board[nr]?.[nc] === player
       ) {
         winningCells.push([nr, nc]);
       } else break;
@@ -144,7 +149,7 @@ export function checkWin(row: number, col: number): [number, number][] | null {
         nr < ROWS &&
         nc >= 0 &&
         nc < COLS &&
-        board[nr][nc] === player
+        board[nr]?.[nc] === player
       ) {
         winningCells.push([nr, nc]);
       } else break;

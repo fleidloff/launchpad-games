@@ -35,10 +35,10 @@ describe("fourInARow.ts", () => {
 
   it("should detect a horizontal win", () => {
     // Manually set up a horizontal line for player 1
-    fourInARow.board[0][0] = 1;
-    fourInARow.board[0][1] = 1;
-    fourInARow.board[0][2] = 1;
-    fourInARow.board[0][3] = 1;
+    fourInARow.board[0]![0] = 1;
+    fourInARow.board[0]![1] = 1;
+    fourInARow.board[0]![2] = 1;
+    fourInARow.board[0]![3] = 1;
 
     const result = fourInARow.checkWin(0, 3);
     expect(result).not.toBeNull();
@@ -47,10 +47,10 @@ describe("fourInARow.ts", () => {
 
   it("should detect a vertical win", () => {
     // Manually set up a vertical line for player 2
-    fourInARow.board[0][5] = 2;
-    fourInARow.board[1][5] = 2;
-    fourInARow.board[2][5] = 2;
-    fourInARow.board[3][5] = 2;
+    fourInARow.board[0]![5] = 2;
+    fourInARow.board[1]![5] = 2;
+    fourInARow.board[2]![5] = 2;
+    fourInARow.board[3]![5] = 2;
 
     const result = fourInARow.checkWin(3, 5);
     expect(result).not.toBeNull();
@@ -58,10 +58,10 @@ describe("fourInARow.ts", () => {
   });
 
   it("should detect a diagonal win (\\)", () => {
-    fourInARow.board[0][0] = 1;
-    fourInARow.board[1][1] = 1;
-    fourInARow.board[2][2] = 1;
-    fourInARow.board[3][3] = 1;
+    fourInARow.board[0]![0] = 1;
+    fourInARow.board[1]![1] = 1;
+    fourInARow.board[2]![2] = 1;
+    fourInARow.board[3]![3] = 1;
 
     const result = fourInARow.checkWin(3, 3);
     expect(result).not.toBeNull();
@@ -69,10 +69,10 @@ describe("fourInARow.ts", () => {
   });
 
   it("should detect a diagonal win (/)", () => {
-    fourInARow.board[0][3] = 2;
-    fourInARow.board[1][2] = 2;
-    fourInARow.board[2][1] = 2;
-    fourInARow.board[3][0] = 2;
+    fourInARow.board[0]![3] = 2;
+    fourInARow.board[1]![2] = 2;
+    fourInARow.board[2]![1] = 2;
+    fourInARow.board[3]![0] = 2;
 
     const result = fourInARow.checkWin(3, 0);
     expect(result).not.toBeNull();
@@ -80,20 +80,20 @@ describe("fourInARow.ts", () => {
   });
 
   it("should not detect a win with only 3 in a row", () => {
-    fourInARow.board[0][0] = 1;
-    fourInARow.board[0][1] = 1;
-    fourInARow.board[0][2] = 1;
+    fourInARow.board[0]![0] = 1;
+    fourInARow.board[0]![1] = 1;
+    fourInARow.board[0]![2] = 1;
 
     expect(fourInARow.checkWin(0, 2)).toBeNull();
   });
 
   it("should reset the game when resetGame is called", () => {
-    fourInARow.board[0][0] = 1;
+    fourInARow.board[0]![0] = 1;
     fourInARow.setGameOver(true);
     
     fourInARow.resetGame();
     
-    expect(fourInARow.board[0][0]).toBe(0);
+    expect(fourInARow.board[0]![0]).toBe(0);
     expect(fourInARow.isGameOver).toBe(false);
     expect(fourInARow.currentPlayer).toBe(1);
   });

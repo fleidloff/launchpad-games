@@ -12,12 +12,12 @@ vi.mock("./midi", () => ({
 
 // Mock performance and requestAnimationFrame for testing
 const mockPerformanceNow = vi.fn(() => 0);
-global.performance.now = mockPerformanceNow;
+(globalThis as any).performance = { now: mockPerformanceNow };
 
 const mockRequestAnimationFrame = vi.fn();
 const mockCancelAnimationFrame = vi.fn();
-global.requestAnimationFrame = mockRequestAnimationFrame;
-global.cancelAnimationFrame = mockCancelAnimationFrame;
+(globalThis as any).requestAnimationFrame = mockRequestAnimationFrame;
+(globalThis as any).cancelAnimationFrame = mockCancelAnimationFrame;
 
 describe("grid.ts", () => {
   beforeEach(() => {
