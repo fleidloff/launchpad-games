@@ -1,5 +1,11 @@
 import { initMidi, lpInput } from "./midi";
-import { enterProgrammerMode, clearGrid, setRGB, getColor } from "./grid";
+import {
+  enterProgrammerMode,
+  clearGrid,
+  setRGB,
+  getColor,
+  setRGBFlashing,
+} from "./grid";
 import type { NoteMessageEvent } from "webmidi";
 
 async function startApp() {
@@ -34,7 +40,7 @@ export function handlePadPress(padId: number, velocity: number): void {
 
   if (currentColor === null) {
     console.log(`Pad ${padId} was OFF. Turning it Green.`);
-    setRGB(padId, 0, velocity, 0);
+    setRGBFlashing(padId, 0, velocity, 0);
   } else {
     console.log(
       `Pad ${padId} was already ON (Color: ${currentColor}). Turning it OFF.`

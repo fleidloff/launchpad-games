@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { setRGB, getColor, clearGrid, enterProgrammerMode } from "./grid";
+import { setRGB, setRGBFlashing, getColor, clearGrid, enterProgrammerMode } from "./grid";
 import * as midi from "./midi";
 
 // Mock the midi module
@@ -10,9 +10,21 @@ vi.mock("./midi", () => ({
   },
 }));
 
+// Mock performance and requestAnimationFrame for testing
+const mockPerformanceNow = vi.fn(() => 0);
+global.performance.now = mockPerformanceNow;
+
+const mockRequestAnimationFrame = vi.fn();
+const mockCancelAnimationFrame = vi.fn();
+global.requestAnimationFrame = mockRequestAnimationFrame;
+global.cancelAnimationFrame = mockCancelAnimationFrame;
+
 describe("grid.ts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset grid state between tests by clearing it
+    clearGrid();
+    vi.clearAllMocks(); // Clear mocks again after clearGrid calls sendRGB
   });
 
   it("should initialize all pads to off", () => {
@@ -39,12 +51,32 @@ describe("grid.ts", () => {
     expect(getColor(15)).toBeNull();
   });
 
-  it("should clear the grid", () => {
-    setRGB(11, 255, 255, 255);
+  it("should set flashing state and return target color for getColor", () => {
+    setRGBFlashing(21, 255, 0, 0);
+    
+    // getColor should return the target color even if flashing
+    expect(getColor(21)).toEqual([255, 0, 0]);
+    
+    // Should have triggered animation loop
+    expect(mockRequestAnimationFrame).toHaveBeenCalled();
+  });
+
+  it("should stop animation when no more pads are flashing", () => {
+    setRGBFlashing(21, 255, 0, 0);
+    expect(mockRequestAnimationFrame).toHaveBeenCalled();
+    
+    // Turning it off (solid 0,0,0) should stop animation
+    setRGB(21, 0, 0, 0);
+    expect(mockCancelAnimationFrame).toHaveBeenCalled();
+  });
+
+  it("should clear the grid and stop animation", () => {
+    setRGBFlashing(11, 255, 255, 255);
     expect(getColor(11)).not.toBeNull();
     
     clearGrid();
     expect(getColor(11)).toBeNull();
+    expect(mockCancelAnimationFrame).toHaveBeenCalled();
   });
 
   it("should send the correct SysEx for Programmer Mode", () => {
