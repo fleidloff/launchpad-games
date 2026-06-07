@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { setRGB, setRGBFlashing, getColor, clearGrid, enterProgrammerMode } from "./grid";
+import { setRGB, setRGBFlashing, setMenuRGB, setMenuRGBFlashing, getColor, clearGrid, enterProgrammerMode } from "./grid";
 import * as midi from "./midi";
 
 // Mock the midi module
@@ -85,5 +85,30 @@ describe("grid.ts", () => {
       [0x00, 0x20, 0x29],
       [0x02, 0x0c, 0x0e, 0x03]
     );
+  });
+
+  it("should ignore standard setRGB and setRGBFlashing calls on protected menu column pads", () => {
+    setRGB(79, 127, 127, 127);
+    expect(getColor(79)).toBeNull(); // remains off
+
+    setRGBFlashing(79, 127, 127, 127);
+    expect(getColor(79)).toBeNull(); // remains off
+  });
+
+  it("should allow setMenuRGB and setMenuRGBFlashing on protected menu column pads", () => {
+    setMenuRGB(79, 127, 127, 127);
+    expect(getColor(79)).toEqual([127, 127, 127]);
+
+    setMenuRGBFlashing(79, 100, 100, 100);
+    expect(getColor(79)).toEqual([100, 100, 100]);
+  });
+
+  it("should not affect protected pads when clearGrid is called", () => {
+    setMenuRGB(79, 127, 127, 127);
+    expect(getColor(79)).toEqual([127, 127, 127]);
+
+    clearGrid();
+    // 79 should still be set since it is protected from clearGrid
+    expect(getColor(79)).toEqual([127, 127, 127]);
   });
 });

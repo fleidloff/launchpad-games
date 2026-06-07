@@ -10,6 +10,11 @@ import type { Color, RGB, FlashingState } from "./types";
 
 const launchpadState: Record<number, Color> = {};
 let animationFrameId: number | null = null;
+const PROTECTED_PADS = [19, 29, 39, 49, 59, 69, 79, 89];
+
+function isProtected(padId: number): boolean {
+  return PROTECTED_PADS.includes(padId);
+}
 
 // Initialize all possible pads (11 to 99) to 0 (off)
 for (let i = 11; i <= 99; i++) {
@@ -55,12 +60,52 @@ export function setRGB(
   g: number = 0,
   b: number = 0
 ): void {
+  if (isProtected(padId)) return;
+  setRGBInternal(padId, r, g, b);
+}
+
+export function setRGBFlashing(
+  padId: number,
+  r: number,
+  g: number,
+  b: number,
+  duration: number = 1500
+): void {
+  if (isProtected(padId)) return;
+  setRGBFlashingInternal(padId, r, g, b, duration);
+}
+
+export function setMenuRGB(
+  padId: number,
+  r: number = 0,
+  g: number = 0,
+  b: number = 0
+): void {
+  setRGBInternal(padId, r, g, b);
+}
+
+export function setMenuRGBFlashing(
+  padId: number,
+  r: number,
+  g: number,
+  b: number,
+  duration: number = 1500
+): void {
+  setRGBFlashingInternal(padId, r, g, b, duration);
+}
+
+function setRGBInternal(
+  padId: number,
+  r: number = 0,
+  g: number = 0,
+  b: number = 0
+): void {
   launchpadState[padId] = [r, g, b];
   sendRGB(padId, r, g, b);
   checkAnimationLoop();
 }
 
-export function setRGBFlashing(
+function setRGBFlashingInternal(
   padId: number,
   r: number,
   g: number,
@@ -123,7 +168,9 @@ function updateAnimation(time: number): void {
 
 export function clearGrid(): void {
   for (let i = 11; i <= 99; i++) {
-    setRGB(i);
+    if (!isProtected(i)) {
+      setRGBInternal(i);
+    }
   }
 }
 

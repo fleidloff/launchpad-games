@@ -1,10 +1,9 @@
-import { lpInput } from "../../midi";
 import {
-  enterProgrammerMode,
   clearGrid,
   setRGB,
   setRGBFlashing,
 } from "../../grid";
+import type { App } from "../../types";
 import type { ControlChangeMessageEvent, NoteMessageEvent } from "webmidi";
 
 export type Player = 1 | 2; // 1 = Green, 2 = Red
@@ -18,6 +17,7 @@ export let board: Cell[][] = [];
 export let currentPlayer: Player = 1;
 export let isAnimating = false;
 export let isGameOver = false;
+let isCurrentAppActive = false;
 
 export function setGameOver(value: boolean): void {
   isGameOver = value;
@@ -27,43 +27,6 @@ const PLAYER_COLORS: Record<Player, [number, number, number]> = {
   1: [0, 127, 0], // Green
   2: [127, 0, 0], // Red
 };
-
-export function init(): void {
-  console.log("[FourInARow] Initializing...");
-  if (!lpInput) {
-    console.error("[FourInARow] No MIDI input found!");
-    return;
-  }
-
-  enterProgrammerMode();
-  resetGame();
-
-  lpInput.removeListener();
-
-  // Note on listener for restarting the game
-  lpInput.addListener("noteon", (e: NoteMessageEvent) => {
-    const velocity = e.note.rawAttack;
-    if (velocity > 0 && isGameOver) {
-      resetGame();
-    }
-  });
-
-  // Column selection via top round buttons (91-98)
-  lpInput.addListener("controlchange", (e: ControlChangeMessageEvent) => {
-    const padId = e.controller.number;
-    const velocity = e.message.data[2];
-
-    if (velocity > 0) {
-      if (isGameOver) {
-        resetGame();
-        return;
-      }
-      if (padId >= 91 && padId <= 98) {
-        handleColumnSelect(padId - 91);
-      }
-    }
-  });
-}
 
 export function resetGame(): void {
   console.log("[FourInARow] Resetting game...");
@@ -101,6 +64,12 @@ export async function handleColumnSelect(col: number): Promise<void> {
   isAnimating = true;
   await animateFall(col, targetRow, currentPlayer);
 
+  // If the app was deactivated during the animation, abort setting board state
+  if (!isCurrentAppActive) {
+    isAnimating = false;
+    return;
+  }
+
   board[targetRow][col] = currentPlayer;
 
   const winningLine = checkWin(targetRow, col);
@@ -125,6 +94,8 @@ export async function animateFall(
 
   // Animate from row 7 (top) down to targetRow
   for (let r = 7; r >= targetRow; r--) {
+    if (!isCurrentAppActive) break;
+
     const padId = padOffset(col, r);
     setRGB(padId, ...color);
 
@@ -212,3 +183,38 @@ function handleDraw(): void {
     setRGBFlashing(i, 127, 0, 0);
   }
 }
+
+export const fourInARowApp: App = {
+  name: "Four In A Row",
+
+  init(): void {
+    isCurrentAppActive = true;
+    resetGame();
+  },
+
+  cleanup(): void {
+    isCurrentAppActive = false;
+  },
+
+  onNoteOn(e: NoteMessageEvent): void {
+    const velocity = e.note.rawAttack;
+    if (velocity > 0 && isGameOver) {
+      resetGame();
+    }
+  },
+
+  onControlChange(e: ControlChangeMessageEvent): void {
+    const padId = e.controller.number;
+    const velocity = e.message.data[2] || 0;
+
+    if (velocity > 0) {
+      if (isGameOver) {
+        resetGame();
+        return;
+      }
+      if (padId >= 91 && padId <= 98) {
+        handleColumnSelect(padId - 91);
+      }
+    }
+  }
+};

@@ -10,7 +10,8 @@ The project has the following directory layout:
 
 *   [index.html](file:///home/fred/dev/launchpad-games/index.html) - The main HTML entry point which renders status info in the browser.
 *   [app/](file:///home/fred/dev/launchpad-games/app) - The root directory for the TypeScript codebase.
-    *   [app.ts](file:///home/fred/dev/launchpad-games/app/app.ts) - The main entry point. Imports and initializes the active app/game.
+    *   [app.ts](file:///home/fred/dev/launchpad-games/app/app.ts) - The main entry point. Registers apps and boots the [AppManager](file:///home/fred/dev/launchpad-games/app/appManager.ts).
+    *   [appManager.ts](file:///home/fred/dev/launchpad-games/app/appManager.ts) - The central controller that registers apps, intercepts menu buttons, and delegates inputs.
     *   [midi.ts](file:///home/fred/dev/launchpad-games/app/midi.ts) - Manages MIDI connection detection via `webmidi`. Sets up the [lpInput](file:///home/fred/dev/launchpad-games/app/midi.ts#L4) and [lpOutput](file:///home/fred/dev/launchpad-games/app/midi.ts#L5) instances.
     *   [grid.ts](file:///home/fred/dev/launchpad-games/app/grid.ts) - High-level utilities for controlling the LED grid and SysEx.
     *   [types.ts](file:///home/fred/dev/launchpad-games/app/types.ts) - Common types like [RGB](file:///home/fred/dev/launchpad-games/app/types.ts#L1), [FlashingState](file:///home/fred/dev/launchpad-games/app/types.ts#L2-L8), and [Color](file:///home/fred/dev/launchpad-games/app/types.ts#L10).
@@ -86,40 +87,54 @@ Run the following scripts from the project root:
 When developing new apps or editing existing ones, follow these guidelines:
 
 ### 1. Structure of an App
-Every app is self-contained under [app/apps/](file:///home/fred/dev/launchpad-games/app/apps) and exports an `init()` function:
-```typescript
-import { lpInput } from "../../midi";
-import { enterProgrammerMode, clearGrid } from "../../grid";
+Every app is self-contained under [app/apps/](file:///home/fred/dev/launchpad-games/app/apps) and exports an object implementing the `App` interface (defined in [types.ts](file:///home/fred/dev/launchpad-games/app/types.ts)):
 
-export function init(): void {
-  if (!lpInput) return;
-  
-  // 1. Enter programmer mode
-  enterProgrammerMode();
-  
-  // 2. Clear state from previous app
-  clearGrid();
-  
-  // 3. CRITICAL: Remove any registered listeners first to prevent leaking callbacks!
-  lpInput.removeListener();
-  
-  // 4. Register new MIDI event handlers
-  lpInput.addListener("noteon", (e) => { ... });
-  lpInput.addListener("controlchange", (e) => { ... });
-}
+```typescript
+import type { App } from "../../types";
+import type { NoteMessageEvent, ControlChangeMessageEvent } from "webmidi";
+
+export const myNewApp: App = {
+  name: "My New App",
+
+  init(): void {
+    // 1. Draw initial visual elements on the grid (e.g. setRGB)
+  },
+
+  cleanup?(): void {
+    // 2. Clear any local game timers, intervals, or animation flags
+  },
+
+  onNoteOn?(e: NoteMessageEvent): void {
+    // 3. Handle grid pad presses (velocity > 0)
+  },
+
+  onNoteOff?(e: NoteMessageEvent): void {
+    // 4. Handle grid pad releases (velocity == 0)
+  },
+
+  onControlChange?(e: ControlChangeMessageEvent): void {
+    // 5. Handle top row button events (Note: right column events are intercepted)
+  }
+};
 ```
 
-### 2. Activating Your App
-To run your app, register/import it in [app/app.ts](file:///home/fred/dev/launchpad-games/app/app.ts) and call its `init()` within `startApp()`:
-```typescript
-import * as myNewApp from "./apps/MyNewApp/myNewApp";
+### 2. Registering and Activating Your App
+To run your app, register it with the `AppManager` instance in [app/app.ts](file:///home/fred/dev/launchpad-games/app/app.ts) on an available right column button (e.g. `69`):
 
-async function startApp() {
-  await initMidi(() => {
-    myNewApp.init(); // Run your app here
-  });
-}
+```typescript
+import { myNewApp } from "./apps/MyNewApp/myNewApp";
+
+// Register app to button 69
+manager.registerApp(69, myNewApp);
 ```
 
-### 3. Writing Tests
-Create tests in the same directory as the app (e.g., `myNewApp.test.ts`). Mock the [grid](file:///home/fred/dev/launchpad-games/app/grid.ts) and [midi](file:///home/fred/dev/launchpad-games/app/midi.ts) modules to verify the logic. Refer to [fourInARow.test.ts](file:///home/fred/dev/launchpad-games/app/apps/FourInARow/fourInARow.test.ts) or [basicButtons.test.ts](file:///home/fred/dev/launchpad-games/app/apps/BasicButtons/basicButtons.test.ts) for boilerplate and examples.
+### 3. Hold-to-Switch Mechanism
+Apps are switched using the right column control buttons (`19`–`89`). 
+*   To switch, the button must be held for **`2.0 seconds`** (to prevent accidental switches).
+*   During the hold, the button will flash red rapidly (`300ms` cycle). If released early, the switch is canceled, and the button reverts to its original color state.
+*   **Menu Protection**: The right column menu buttons (`19`–`89`) are protected in [grid.ts](file:///home/fred/dev/launchpad-games/app/grid.ts). Standard app calls to `setRGB()`, `setRGBFlashing()`, and `clearGrid()` are restricted from modifying these pads, preventing apps from overwriting switcher menu state during gameplay. The manager uses dedicated `setMenuRGB()` and `setMenuRGBFlashing()` to update these LEDs.
+*   Upon switching, `cleanup()` is called on the active app, the grid is cleared, the menu LEDs update, and `init()` is called on the new app.
+
+### 4. Writing Tests
+Create tests in the same directory as the app (e.g., `myNewApp.test.ts`). You can test the app logic by calling methods directly on your exported app object or invoking its lifecycle event handlers. Refer to [fourInARow.test.ts](file:///home/fred/dev/launchpad-games/app/apps/FourInARow/fourInARow.test.ts) or [basicButtons.test.ts](file:///home/fred/dev/launchpad-games/app/apps/BasicButtons/basicButtons.test.ts) for examples.
+
