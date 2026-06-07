@@ -1,5 +1,10 @@
 import { lpInput } from "./midi";
-import { enterProgrammerMode, clearGrid, setMenuRGB, setMenuRGBFlashing } from "./grid";
+import {
+  enterProgrammerMode,
+  clearGrid,
+  setMenuRGB,
+  setMenuRGBFlashing,
+} from "./grid";
 import type { App } from "./types";
 import type { NoteMessageEvent, ControlChangeMessageEvent } from "webmidi";
 
@@ -33,7 +38,7 @@ export class AppManager {
 
   switchApp(padId: number): void {
     const nextApp = this.apps.get(padId);
-    if (!nextApp || nextApp === this.activeApp) return;
+    if (!nextApp) return;
 
     console.log(`[AppManager] Switching to app: ${nextApp.name}`);
 
@@ -85,7 +90,8 @@ export class AppManager {
     const padId = e.controller.number;
     const velocity = e.message.data[2] || 0;
 
-    const isMenuButton = padId % 10 === 9 && padId >= 19 && padId <= 89 && this.apps.has(padId);
+    const isMenuButton =
+      padId % 10 === 9 && padId >= 19 && padId <= 89 && this.apps.has(padId);
 
     if (isMenuButton) {
       if (velocity > 0) {
@@ -100,7 +106,7 @@ export class AppManager {
         const timer = setTimeout(() => {
           this.holdTimers.delete(padId);
           this.switchApp(padId);
-        }, 2000);
+        }, 1500);
 
         this.holdTimers.set(padId, timer);
       } else {
