@@ -1,11 +1,11 @@
-import { lpInput } from "../midi";
+import { lpInput } from "../../midi";
 import {
   enterProgrammerMode,
   clearGrid,
   setRGB,
   getColor,
   setRGBFlashing,
-} from "../grid";
+} from "../../grid";
 import type { NoteMessageEvent, ControlChangeMessageEvent } from "webmidi";
 
 export function init(): void {

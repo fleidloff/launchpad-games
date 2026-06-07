@@ -10,6 +10,9 @@ Game ideas
 - Geschwindigkeitsspiel Pads antippen
 - Pong
 - Pong 1on1
+- The 100% Logic Logic-Puzzler (No-Guess Minesweeper)
+- Co-Op "Finger Twister" (Local Multiplayer)
+- Snake
 
 Game Menu
 
@@ -18,3 +21,4 @@ Game Menu
 Gimmicks
 
 - render text
+- render image

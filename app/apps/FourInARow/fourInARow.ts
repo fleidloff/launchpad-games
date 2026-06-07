@@ -1,10 +1,10 @@
-import { lpInput } from "../midi";
+import { lpInput } from "../../midi";
 import {
   enterProgrammerMode,
   clearGrid,
   setRGB,
   setRGBFlashing,
-} from "../grid";
+} from "../../grid";
 import type { ControlChangeMessageEvent, NoteMessageEvent } from "webmidi";
 
 export type Player = 1 | 2; // 1 = Green, 2 = Red
