@@ -20,6 +20,7 @@ The project has the following directory layout:
     *   [apps/](file:///home/fred/dev/launchpad-games/app/apps) - Contains all individual modular applications/games.
         *   [BasicButtons/](file:///home/fred/dev/launchpad-games/app/apps/BasicButtons) - A simple interactive button tester app.
         *   [FourInARow/](file:///home/fred/dev/launchpad-games/app/apps/FourInARow) - A 2-player Connect Four implementation on the grid.
+        *   [TactileSnake/](file:///home/fred/dev/launchpad-games/app/apps/TactileSnake) - Classic Snake game utilizing relative matrix controls.
 
 ---
 
