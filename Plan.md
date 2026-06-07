@@ -1,9 +1,12 @@
 Build Tools
 
-First Game
+Game ideas
 
-- build 1st simple game
-- could be tic tac toe
+- Tic Tac Toe
+- Chess
+- Geschwindigkeitsspiel Pads antippen
+- Pong
+- Pong 1on1
 
 Game Menu
 
