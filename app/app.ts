@@ -1,18 +1,21 @@
 import { WebMidi } from "webmidi";
+import type { Input, Output, NoteMessageEvent } from "webmidi";
 
-let lpInput = null;
-let lpOutput = null;
+let lpInput: Input | undefined = undefined;
+let lpOutput: Output | undefined = undefined;
 
 // Initialize WebMidi
 WebMidi.enable({ sysex: true }) // SysEx is REQUIRED to switch Launchpad modes
   .then(onEnabled)
-  .catch((err) => {
-    document.getElementById("status").innerText =
-      "Web MIDI not supported/allowed.";
+  .catch((err: Error) => {
+    const statusDiv = document.getElementById("status");
+    if (statusDiv) {
+      statusDiv.innerText = "Web MIDI not supported/allowed.";
+    }
     console.error(err);
   });
 
-function onEnabled() {
+function onEnabled(): void {
   // Watch for device connections/disconnections
   WebMidi.addListener("connected", checkDevices);
   WebMidi.addListener("disconnected", checkDevices);
@@ -22,15 +25,17 @@ function onEnabled() {
 // A safety flag to prevent spamming the Launchpad with commands
 let isInitialized = false;
 
-function checkDevices() {
+function checkDevices(): void {
   lpInput = WebMidi.inputs.find((i) => i.name.includes("Launchpad X"));
   lpOutput = WebMidi.outputs.find((o) => o.name.includes("Launchpad X"));
 
   const statusDiv = document.getElementById("status");
 
   if (lpInput && lpOutput) {
-    statusDiv.innerText = "Launchpad X Connected!";
-    statusDiv.className = "connected";
+    if (statusDiv) {
+      statusDiv.innerText = "Launchpad X Connected!";
+      statusDiv.className = "connected";
+    }
 
     // Only initialize if we haven't already done so for this session
     if (!isInitialized) {
@@ -42,21 +47,26 @@ function checkDevices() {
       }, 100);
     }
   } else {
-    statusDiv.innerText = "Launchpad X Not Found";
-    statusDiv.className = "disconnected";
+    if (statusDiv) {
+      statusDiv.innerText = "Launchpad X Not Found";
+      statusDiv.className = "disconnected";
+    }
     isInitialized = false; // Reset flag so it can re-init if replugged
   }
 }
 
-// A simple object where the key is the Pad ID (e.g., 11) and the value is the Color Code (0-127)
-const launchpadState = {};
+// A simple object where the key is the Pad ID (e.g., 11) and the value is the Color Code (0-127) or RGB array
+type Color = number | [number, number, number];
+const launchpadState: Record<number, Color> = {};
 
 // Initialize all possible pads (11 to 99) to 0 (off)
 for (let i = 11; i <= 99; i++) {
   launchpadState[i] = 0;
 }
 
-function initLaunchpad() {
+function initLaunchpad(): void {
+  if (!lpOutput || !lpInput) return;
+
   // 1. Enter Programmer Mode (SysEx sequence from Novation's Spec)
   // [Manufacturer ID, Device ID, Command, Mode (03 = Programmer)]
   lpOutput.sendSysex([0x00, 0x20, 0x29], [0x02, 0x0c, 0x0e, 0x03]);
@@ -68,9 +78,9 @@ function initLaunchpad() {
   // Launchpad X uses 'noteon' for the 8x8 grid and 'controlchange' for top/side buttons
   lpInput.removeListener(); // Clear old listeners if re-connecting
 
-  lpInput.addListener("noteon", (e) => {
+  lpInput.addListener("noteon", (e: NoteMessageEvent) => {
     const padId = e.note.number;
-    const velocity = e.rawVelocity; // How hard it was pressed (0-127)
+    const velocity = e.note.rawAttack; // How hard it was pressed (0-127)
 
     if (velocity > 0) {
       handlePadPress(padId, velocity);
@@ -80,21 +90,24 @@ function initLaunchpad() {
   updatePad(99, 21);
 }
 
-function updatePad(padId, colorCode) {
+function updatePad(padId: number, colorCode: number): void {
   // 1. Update our local virtual memory
   launchpadState[padId] = colorCode;
 
   // 2. Send the physical MIDI command to the Launchpad
   if (!lpOutput) return;
 
+  const channel = lpOutput.channels[1];
+  if (!channel) return;
+
   if (padId >= 91 && padId <= 99) {
-    lpOutput.channels[1].sendControlChange(padId, colorCode);
+    channel.sendControlChange(padId, colorCode);
   } else {
-    lpOutput.channels[1].sendNoteOn(padId, { rawAttack: colorCode });
+    channel.sendNoteOn(padId, { rawAttack: colorCode });
   }
 }
 
-function setRGB(padId, r, g, b) {
+function setRGB(padId: number, r: number, g: number, b: number): void {
   if (!lpOutput) return;
   launchpadState[padId] = [r, g, b];
 
@@ -137,7 +150,7 @@ function setRGB(padId, r, g, b) {
 }
 
 // Helper: Clear entire grid
-function clearGrid() {
+function clearGrid(): void {
   if (!lpOutput) return;
   for (let i = 11; i <= 99; i++) {
     updatePad(i, 0); // 0 turns LED off
@@ -145,7 +158,7 @@ function clearGrid() {
 }
 
 // Basic Game Logic Entrypoint
-function handlePadPress(padId, velocity) {
+function handlePadPress(padId: number, velocity: number): void {
   console.log(`Pressed pad: ${padId}`);
 
   const currentColor = launchpadState[padId];
