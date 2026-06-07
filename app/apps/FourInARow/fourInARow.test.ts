@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as fourInARow from "./fourInARow";
-import * as grid from "../grid";
+import * as grid from "../../grid";
 
 // Mock the grid module
-vi.mock("../grid", () => ({
+vi.mock("../../grid", () => ({
   getColor: vi.fn(),
   setRGB: vi.fn(),
   setRGBFlashing: vi.fn(),
@@ -12,7 +12,7 @@ vi.mock("../grid", () => ({
 }));
 
 // Mock the midi module
-vi.mock("../midi", () => ({
+vi.mock("../../midi", () => ({
   lpInput: {
     removeListener: vi.fn(),
     addListener: vi.fn(),
