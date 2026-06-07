@@ -87,27 +87,15 @@ function initLaunchpad(): void {
     }
   });
 
-  updatePad(99, 21);
+  setRGB(99);
 }
 
-function updatePad(padId: number, colorCode: number): void {
-  // 1. Update our local virtual memory
-  launchpadState[padId] = colorCode;
-
-  // 2. Send the physical MIDI command to the Launchpad
-  if (!lpOutput) return;
-
-  const channel = lpOutput.channels[1];
-  if (!channel) return;
-
-  if (padId >= 91 && padId <= 99) {
-    channel.sendControlChange(padId, colorCode);
-  } else {
-    channel.sendNoteOn(padId, { rawAttack: colorCode });
-  }
-}
-
-function setRGB(padId: number, r: number, g: number, b: number): void {
+function setRGB(
+  padId: number,
+  r: number = 0,
+  g: number = 0,
+  b: number = 0
+): void {
   if (!lpOutput) return;
   launchpadState[padId] = [r, g, b];
 
@@ -153,24 +141,33 @@ function setRGB(padId: number, r: number, g: number, b: number): void {
 function clearGrid(): void {
   if (!lpOutput) return;
   for (let i = 11; i <= 99; i++) {
-    updatePad(i, 0); // 0 turns LED off
+    setRGB(i); // 0 turns LED off
   }
+}
+
+function getColor(padId: number): [number, number, number] | null {
+  const color = launchpadState[padId];
+  if (Array.isArray(color)) {
+    const [r, g, b] = color;
+    if (r === 0 && g === 0 && b === 0) return null;
+    return [r, g, b];
+  }
+  return null;
 }
 
 // Basic Game Logic Entrypoint
 function handlePadPress(padId: number, velocity: number): void {
   console.log(`Pressed pad: ${padId}`);
 
-  const currentColor = launchpadState[padId];
+  const currentColor = getColor(padId);
 
-  if (currentColor === 0) {
+  if (currentColor === null) {
     console.log(`Pad ${padId} was OFF. Turning it Green.`);
     setRGB(padId, 0, velocity, 0);
-    //updatePad(padId, 21)
   } else {
     console.log(
       `Pad ${padId} was already ON (Color: ${currentColor}). Turning it OFF.`
     );
-    updatePad(padId, 0); // 0 = Off
+    setRGB(padId, 0, 0, 0); // 0 = Off
   }
 }
