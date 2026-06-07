@@ -1,23 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { handlePadPress } from "./app";
-import * as grid from "./grid";
+import { handlePadPress } from "./basicButtons";
+import * as grid from "../grid";
 
 // Mock the grid module
-vi.mock("./grid", () => ({
+vi.mock("../grid", () => ({
   getColor: vi.fn(),
   setRGB: vi.fn(),
+  setRGBFlashing: vi.fn(),
   enterProgrammerMode: vi.fn(),
   clearGrid: vi.fn(),
 }));
 
-// Mock the midi module to prevent startApp from failing
-vi.mock("./midi", () => ({
-  initMidi: vi.fn().mockImplementation(() => Promise.resolve()),
-  lpInput: null,
-  lpOutput: null,
+// Mock the midi module
+vi.mock("../midi", () => ({
+  lpInput: {
+    removeListener: vi.fn(),
+    addListener: vi.fn(),
+  },
 }));
 
-describe("app.ts", () => {
+describe("basicButtons.ts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -28,6 +30,7 @@ describe("app.ts", () => {
     
     handlePadPress(11, 127);
     
+    // The current logic in basicButtons uses setRGB for new green pads
     expect(grid.setRGB).toHaveBeenCalledWith(11, 0, 127, 0);
   });
 
