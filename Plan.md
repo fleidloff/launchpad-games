@@ -1,6 +1,5 @@
 Build Tools
 
-- introduce vite
 - run vite for github pages (or locally build script)
 - use webmidi from "webmidi" and remove vendor folder
 - use typescript
