@@ -1,10 +1,10 @@
 import { initMidi } from "./midi";
-import * as basicButtons from "./apps/basicButtons";
+import * as fourInARow from "./apps/fourInARow";
 
 async function startApp() {
   await initMidi(() => {
-    // This is where you can swap between different modular apps
-    basicButtons.init();
+    // Current active app
+    fourInARow.init();
   });
 }
 

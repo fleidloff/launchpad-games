@@ -25,6 +25,12 @@ export function enterProgrammerMode(): void {
 function sendRGB(padId: number, r: number, g: number, b: number): void {
   if (!lpOutput) return;
 
+  // Clamp RGB to 0-127 as per Launchpad X SysEx specs
+  const clamp = (v: number) => {
+    const rounded = Math.round(v);
+    return rounded < 0 ? 0 : (rounded > 127 ? 127 : rounded);
+  };
+
   const rawMessage = [
     0xf0, // SysEx Start
     ...NOVATION_ID,
@@ -32,10 +38,10 @@ function sendRGB(padId: number, r: number, g: number, b: number): void {
     CMD_API_SUB_ID,
     CMD_LED_CONTROL,
     LIGHTING_RGB,
-    padId, // On Launchpad X Programmer Mode, the LED index matches the Note/CC number
-    r,
-    g,
-    b,
+    padId, 
+    clamp(r),
+    clamp(g),
+    clamp(b),
     0xf7, // SysEx End
   ];
 
