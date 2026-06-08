@@ -13,6 +13,7 @@ interface GameState {
   hasHitCurrentTarget: boolean;
   isGameOver: boolean;
   allFingersCleared: boolean;
+  hasStarted: boolean;
 
   // Game Loop Timers
   spawnTimer: NodeJS.Timeout | null;
@@ -29,6 +30,7 @@ const state: GameState = {
   hasHitCurrentTarget: false,
   isGameOver: false,
   allFingersCleared: true,
+  hasStarted: false,
   spawnTimer: null,
   lifespanTimer: null,
   currentLifespanMs: 1500, // Start casual
@@ -72,7 +74,7 @@ function generateTargetCluster(score: number): number[] {
   return pads;
 }
 
-function triggerGameOver(failedPadId: number, score: number): void {
+function triggerGameOver(failedPadId: number): void {
   state.isGameOver = true;
   state.allFingersCleared = false;
 
@@ -80,12 +82,25 @@ function triggerGameOver(failedPadId: number, score: number): void {
   if (state.lifespanTimer) clearTimeout(state.lifespanTimer);
 
   // Leave everything dim, but turn the failed target ring flashing red
-  const row = Math.floor(failedPadId / 10);
-  const col = failedPadId % 10;
+  // We surround the active target block (currentPads) with red flashing.
+  const padsToRing = state.currentPads.length > 0 ? state.currentPads : [failedPadId];
+  let minRow = 9, maxRow = 0, minCol = 9, maxCol = 0;
 
-  for (let r = row - 1; r <= row + 1; r++) {
-    for (let c = col - 1; c <= col + 1; c++) {
-      if (r === row && c === col) continue;
+  for (const padId of padsToRing) {
+    const r = Math.floor(padId / 10);
+    const c = padId % 10;
+    if (r < minRow) minRow = r;
+    if (r > maxRow) maxRow = r;
+    if (c < minCol) minCol = c;
+    if (c > maxCol) maxCol = c;
+  }
+
+  for (let r = minRow - 1; r <= maxRow + 1; r++) {
+    for (let c = minCol - 1; c <= maxCol + 1; c++) {
+      // Skip the cells that are part of the target itself
+      if (r >= minRow && r <= maxRow && c >= minCol && c <= maxCol) {
+        continue;
+      }
       if (r >= 1 && r <= 8 && c >= 1 && c <= 8) {
         setRGBFlashing(
           r * 10 + c,
@@ -137,12 +152,18 @@ export const reflexStorm: App = {
     state.score = 0;
     state.isGameOver = false;
     state.allFingersCleared = true;
-    state.currentPads = [];
+    state.hasStarted = false;
     state.hasHitCurrentTarget = false;
     state.currentLifespanMs = 1500;
     state.currentIntervalMs = 800;
 
-    spawnTarget();
+    renderBackground();
+
+    // Generate and display the first challenge target, but don't start the timer yet
+    state.currentPads = generateTargetCluster(0);
+    state.currentPads.forEach((padId) => {
+      setRGB(padId, COLOR_TARGET.r, COLOR_TARGET.g, COLOR_TARGET.b);
+    });
   },
 
   cleanup(): void {
@@ -162,6 +183,24 @@ export const reflexStorm: App = {
 
     // Set tracker flags upon active game input
     state.allFingersCleared = false;
+
+    if (!state.hasStarted) {
+      if (state.currentPads.includes(padId)) {
+        state.hasStarted = true;
+        state.hasHitCurrentTarget = true;
+        state.score++;
+
+        // Flash target instantly to give satisfying optical hit acknowledgment
+        state.currentPads.forEach((p) => setRGB(p, 0, 127, 0));
+
+        // Start the next spawn timer
+        state.spawnTimer = setTimeout(spawnTarget, state.currentIntervalMs);
+      } else {
+        // Misclicking an empty pad is an immediate reflex disqualification!
+        triggerGameOver(padId);
+      }
+      return;
+    }
 
     // Check if user hit any valid coordinate component of our active target
     if (state.currentPads.includes(padId) && !state.hasHitCurrentTarget) {
@@ -184,7 +223,8 @@ export const reflexStorm: App = {
   },
 
   onControlChange(e: ControlChangeMessageEvent): void {
-    if (state.isGameOver && state.allFingersCleared && e.value > 0) {
+    const velocity = e.value !== undefined ? e.value : (e.message.data[2] || 0);
+    if (state.isGameOver && state.allFingersCleared && velocity > 0) {
       this.init();
     }
   },
