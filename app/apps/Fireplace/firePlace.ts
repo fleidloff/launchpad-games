@@ -1,6 +1,6 @@
 import type { App } from "../../types";
 import type { NoteMessageEvent } from "webmidi";
-import { setRGB, clearGrid } from "../../grid";
+import { setRGB, clearGrid } from "../../core/grid";
 
 const TICK_INTERVAL_MS = 140; // Slightly slower frame pacing for distinct pixel-art tracking
 

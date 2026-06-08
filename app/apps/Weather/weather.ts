@@ -1,5 +1,5 @@
 import type { App } from "../../types";
-import { setRGB, clearGrid } from "../../grid";
+import { setRGB, clearGrid } from "../../core/grid";
 
 const LATITUDE = 53.94;
 const LONGITUDE = 10.31;

@@ -1,5 +1,5 @@
 import type { App } from "../../types";
-import { setRGB, clearGrid } from "../../grid";
+import { setRGB, clearGrid } from "../../core/grid";
 import { Output } from "webmidi";
 
 // Soft, steady ambient colors (Restricted to 0-127 for Launchpad X)

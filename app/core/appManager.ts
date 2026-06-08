@@ -5,7 +5,7 @@ import {
   setMenuRGB,
   setMenuRGBFlashing,
 } from "./grid";
-import type { App } from "./types";
+import type { App } from "../types";
 import type { NoteMessageEvent, ControlChangeMessageEvent } from "webmidi";
 
 export class AppManager {

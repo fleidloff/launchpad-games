@@ -6,7 +6,7 @@ import {
   CMD_LED_CONTROL, 
   LIGHTING_RGB
 } from "./constants";
-import type { Color, RGB, FlashingState } from "./types";
+import type { Color, RGB, FlashingState } from "../types";
 
 const launchpadState: Record<number, Color> = {};
 let animationFrameId: number | null = null;

@@ -1,4 +1,4 @@
-import { setRGB, getColor } from "../../grid";
+import { setRGB, getColor } from "../../core/grid";
 import type { App } from "../../types";
 import type { NoteMessageEvent, ControlChangeMessageEvent } from "webmidi";
 

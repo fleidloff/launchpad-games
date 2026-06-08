@@ -1,6 +1,6 @@
 import type { App } from "../../types";
 import type { NoteMessageEvent, ControlChangeMessageEvent } from "webmidi";
-import { setRGB, setRGBFlashing, clearGrid } from "../../grid";
+import { setRGB, setRGBFlashing, clearGrid } from "../../core/grid";
 
 // Colors (Restricted to 0-127 for Launchpad X)
 const COLOR_TARGET = { r: 0, g: 127, b: 64 }; // Teal/Cyan Target
@@ -72,7 +72,7 @@ function generateTargetCluster(score: number): number[] {
   return pads;
 }
 
-function triggerGameOver(failedPadId: number): void {
+function triggerGameOver(failedPadId: number, score: number): void {
   state.isGameOver = true;
   state.allFingersCleared = false;
 

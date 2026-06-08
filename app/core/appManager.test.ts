@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { AppManager } from "./appManager";
 import * as grid from "./grid";
 import * as midi from "./midi";
-import type { App } from "./types";
+import type { App } from "../types";
 
 vi.mock("./grid", () => ({
   enterProgrammerMode: vi.fn(),

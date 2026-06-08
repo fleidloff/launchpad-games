@@ -10,13 +10,14 @@ The project has the following directory layout:
 
 *   [index.html](file:///home/fred/dev/launchpad-games/index.html) - The main HTML entry point which renders status info in the browser.
 *   [app/](file:///home/fred/dev/launchpad-games/app) - The root directory for the TypeScript codebase.
-    *   [app.ts](file:///home/fred/dev/launchpad-games/app/app.ts) - The main entry point. Registers apps and boots the [AppManager](file:///home/fred/dev/launchpad-games/app/appManager.ts).
-    *   [appManager.ts](file:///home/fred/dev/launchpad-games/app/appManager.ts) - The central controller that registers apps, intercepts menu buttons, and delegates inputs.
-    *   [midi.ts](file:///home/fred/dev/launchpad-games/app/midi.ts) - Manages MIDI connection detection via `webmidi`. Sets up the [lpInput](file:///home/fred/dev/launchpad-games/app/midi.ts#L4) and [lpOutput](file:///home/fred/dev/launchpad-games/app/midi.ts#L5) instances.
-    *   [grid.ts](file:///home/fred/dev/launchpad-games/app/grid.ts) - High-level utilities for controlling the LED grid and SysEx.
+    *   [app.ts](file:///home/fred/dev/launchpad-games/app/app.ts) - The main entry point. Registers apps and boots the [AppManager](file:///home/fred/dev/launchpad-games/app/core/appManager.ts).
+    *   [core/](file:///home/fred/dev/launchpad-games/app/core) - Core launchpad system controllers and interfaces.
+        *   [appManager.ts](file:///home/fred/dev/launchpad-games/app/core/appManager.ts) - The central controller that registers apps, intercepts menu buttons, and delegates inputs.
+        *   [midi.ts](file:///home/fred/dev/launchpad-games/app/core/midi.ts) - Manages MIDI connection detection via `webmidi`. Sets up the [lpInput](file:///home/fred/dev/launchpad-games/app/core/midi.ts#L4) and [lpOutput](file:///home/fred/dev/launchpad-games/app/core/midi.ts#L5) instances.
+        *   [grid.ts](file:///home/fred/dev/launchpad-games/app/core/grid.ts) - High-level utilities for controlling the LED grid and SysEx.
+        *   [constants.ts](file:///home/fred/dev/launchpad-games/app/core/constants.ts) - Novation SysEx command IDs and protocol constants.
+        *   [grid.test.ts](file:///home/fred/dev/launchpad-games/app/core/grid.test.ts) - Tests for grid/LED state management and animations.
     *   [types.ts](file:///home/fred/dev/launchpad-games/app/types.ts) - Common types like [RGB](file:///home/fred/dev/launchpad-games/app/types.ts#L1), [FlashingState](file:///home/fred/dev/launchpad-games/app/types.ts#L2-L8), and [Color](file:///home/fred/dev/launchpad-games/app/types.ts#L10).
-    *   [constants.ts](file:///home/fred/dev/launchpad-games/app/constants.ts) - Novation SysEx command IDs and protocol constants.
-    *   [grid.test.ts](file:///home/fred/dev/launchpad-games/app/grid.test.ts) - Tests for grid/LED state management and animations.
     *   [apps/](file:///home/fred/dev/launchpad-games/app/apps) - Contains all individual modular applications/games.
         *   [BasicButtons/](file:///home/fred/dev/launchpad-games/app/apps/BasicButtons) - A simple interactive button tester app.
         *   [FourInARow/](file:///home/fred/dev/launchpad-games/app/apps/FourInARow) - A 2-player Connect Four implementation on the grid.

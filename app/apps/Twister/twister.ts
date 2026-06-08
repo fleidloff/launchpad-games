@@ -1,6 +1,6 @@
 import type { App } from "../../types";
 import type { NoteMessageEvent, ControlChangeMessageEvent } from "webmidi";
-import { setRGB, setRGBFlashing, clearGrid } from "../../grid";
+import { setRGB, setRGBFlashing, clearGrid } from "../../core/grid";
 
 // Colors (Restricted to 0-127 for Launchpad X)
 const COLOR_P1 = { r: 0, g: 0, b: 127 }; // Solid Blue

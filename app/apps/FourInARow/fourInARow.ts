@@ -2,7 +2,7 @@ import {
   clearGrid,
   setRGB,
   setRGBFlashing,
-} from "../../grid";
+} from "../../core/grid";
 import type { App } from "../../types";
 import type { ControlChangeMessageEvent, NoteMessageEvent } from "webmidi";
 
