@@ -106,7 +106,9 @@ export const myNewApp: App = {
   },
 
   onNoteOn?(e: NoteMessageEvent): void {
-    // 3. Handle grid pad presses (velocity > 0)
+    // 3. Handle grid pad presses (velocity > 0).
+    //    Note: if onNoteOnLongPress is implemented, this is deferred and called on release
+    //    only if the button was not held long enough to trigger a long press.
   },
 
   onNoteOff?(e: NoteMessageEvent): void {
@@ -114,7 +116,17 @@ export const myNewApp: App = {
   },
 
   onControlChange?(e: ControlChangeMessageEvent): void {
-    // 5. Handle top row button events (Note: right column events are intercepted)
+    // 5. Handle top row button events (Note: right column events are intercepted).
+    //    Note: if onControlChangeLongPress is implemented, this is deferred and called on release
+    //    only if the button was not held long enough to trigger a long press.
+  },
+
+  onNoteOnLongPress?(e: NoteMessageEvent): void {
+    // 6. Optional: Handle long press on grid pads (held >= 400ms)
+  },
+
+  onControlChangeLongPress?(e: ControlChangeMessageEvent): void {
+    // 7. Optional: Handle long press on CC/control buttons (held >= 400ms)
   }
 };
 ```

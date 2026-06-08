@@ -13,6 +13,10 @@ export class AppManager {
   private activeApp: App | null = null;
   private activePadId: number | null = null;
   private holdTimers: Map<number, any> = new Map();
+  private notePressTimers: Map<number, { timer: any; event: NoteMessageEvent }> = new Map();
+  private noteLongPressed: Set<number> = new Set();
+  private ccPressTimers: Map<number, { timer: any; event: ControlChangeMessageEvent }> = new Map();
+  private ccLongPressed: Set<number> = new Set();
 
   registerApp(padId: number, app: App): void {
     this.apps.set(padId, app);
@@ -41,6 +45,9 @@ export class AppManager {
     if (!nextApp) return;
 
     console.log(`[AppManager] Switching to app: ${nextApp.name}`);
+
+    // Clear long press timers
+    this.clearLongPressTimers();
 
     // 1. Clean up old app
     if (this.activeApp?.cleanup) {
@@ -78,12 +85,68 @@ export class AppManager {
     }
   }
 
+  handleNoteOnLongPress(e: NoteMessageEvent): void {
+    this.activeApp?.onNoteOnLongPress?.(e);
+  }
+
+  handleControlChangeLongPress(e: ControlChangeMessageEvent): void {
+    this.activeApp?.onControlChangeLongPress?.(e);
+  }
+
+  private clearLongPressTimers(): void {
+    for (const entry of this.notePressTimers.values()) {
+      clearTimeout(entry.timer);
+    }
+    this.notePressTimers.clear();
+    this.noteLongPressed.clear();
+
+    for (const entry of this.ccPressTimers.values()) {
+      clearTimeout(entry.timer);
+    }
+    this.ccPressTimers.clear();
+    this.ccLongPressed.clear();
+  }
+
   private handleNoteOn(e: NoteMessageEvent): void {
-    this.activeApp?.onNoteOn?.(e);
+    const padId = e.note.number;
+    const velocity = e.note.rawAttack;
+
+    if (velocity > 0) {
+      if (this.activeApp?.onNoteOnLongPress) {
+        if (this.notePressTimers.has(padId)) {
+          clearTimeout(this.notePressTimers.get(padId)!.timer);
+        }
+        this.noteLongPressed.delete(padId);
+
+        const timer = setTimeout(() => {
+          this.notePressTimers.delete(padId);
+          this.noteLongPressed.add(padId);
+          this.handleNoteOnLongPress(e);
+        }, 400); // 400ms threshold
+
+        this.notePressTimers.set(padId, { timer, event: e });
+      } else {
+        this.activeApp?.onNoteOn?.(e);
+      }
+    }
   }
 
   private handleNoteOff(e: NoteMessageEvent): void {
-    this.activeApp?.onNoteOff?.(e);
+    const padId = e.note.number;
+
+    if (this.activeApp?.onNoteOnLongPress) {
+      const entry = this.notePressTimers.get(padId);
+      if (entry) {
+        clearTimeout(entry.timer);
+        this.notePressTimers.delete(padId);
+        this.activeApp?.onNoteOn?.(entry.event); // Trigger short press (represented as onNoteOn) with original NoteOn event
+      } else if (this.noteLongPressed.has(padId)) {
+        this.noteLongPressed.delete(padId);
+      }
+      this.activeApp?.onNoteOff?.(e);
+    } else {
+      this.activeApp?.onNoteOff?.(e);
+    }
   }
 
   private handleControlChange(e: ControlChangeMessageEvent): void {
@@ -122,7 +185,33 @@ export class AppManager {
     }
 
     // Forward other CC events
-    this.activeApp?.onControlChange?.(e);
+    if (this.activeApp?.onControlChangeLongPress) {
+      if (velocity > 0) {
+        if (this.ccPressTimers.has(padId)) {
+          clearTimeout(this.ccPressTimers.get(padId)!.timer);
+        }
+        this.ccLongPressed.delete(padId);
+
+        const timer = setTimeout(() => {
+          this.ccPressTimers.delete(padId);
+          this.ccLongPressed.add(padId);
+          this.handleControlChangeLongPress(e);
+        }, 400); // 400ms threshold
+
+        this.ccPressTimers.set(padId, { timer, event: e });
+      } else {
+        const entry = this.ccPressTimers.get(padId);
+        if (entry) {
+          clearTimeout(entry.timer);
+          this.ccPressTimers.delete(padId);
+          this.activeApp?.onControlChange?.(entry.event); // Trigger short press using original CC event
+        } else if (this.ccLongPressed.has(padId)) {
+          this.ccLongPressed.delete(padId);
+        }
+      }
+    } else {
+      this.activeApp?.onControlChange?.(e);
+    }
   }
 
   // Helper getters for testing

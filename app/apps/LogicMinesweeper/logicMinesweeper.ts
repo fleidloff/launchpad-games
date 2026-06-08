@@ -23,9 +23,7 @@ export let isGameWon = false;
 export let playMode: "reveal" | "flag" = "reveal";
 let isCurrentAppActive = false;
 
-const LONG_PRESS_MS = 400;
-const pressTimers = new Map<number, any>();
-const longPressedPads = new Set<number>();
+
 
 export function resetGame(): void {
   console.log("[LogicMinesweeper] Resetting game...");
@@ -351,43 +349,12 @@ function handleWin(): void {
   }
 }
 
-export function handleGridPressStart(padId: number): void {
+export function handleGridShortPress(padId: number): void {
   if (isGameOver || isGameWon) {
     resetGame();
     return;
   }
 
-  const r = Math.floor(padId / 10) - 1;
-  const c = (padId % 10) - 1;
-  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
-
-  // Clear existing timer if any
-  if (pressTimers.has(padId)) {
-    clearTimeout(pressTimers.get(padId));
-  }
-  longPressedPads.delete(padId);
-
-  const timer = setTimeout(() => {
-    pressTimers.delete(padId);
-    longPressedPads.add(padId);
-    handleGridLongPress(padId);
-  }, LONG_PRESS_MS);
-
-  pressTimers.set(padId, timer);
-}
-
-export function handleGridPressEnd(padId: number): void {
-  const timer = pressTimers.get(padId);
-  if (timer) {
-    clearTimeout(timer);
-    pressTimers.delete(padId);
-    handleGridShortPress(padId);
-  } else if (longPressedPads.has(padId)) {
-    longPressedPads.delete(padId);
-  }
-}
-
-export function handleGridShortPress(padId: number): void {
   const r = Math.floor(padId / 10) - 1;
   const c = (padId % 10) - 1;
   if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
@@ -419,6 +386,11 @@ export function handleGridShortPress(padId: number): void {
 }
 
 export function handleGridLongPress(padId: number): void {
+  if (isGameOver || isGameWon) {
+    resetGame();
+    return;
+  }
+
   const r = Math.floor(padId / 10) - 1;
   const c = (padId % 10) - 1;
   if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
@@ -440,8 +412,7 @@ export function handleGridLongPress(padId: number): void {
 
 export function handleGridPress(padId: number): void {
   // Simulates a short press for compatibility and tests
-  handleGridPressStart(padId);
-  handleGridPressEnd(padId);
+  handleGridShortPress(padId);
 }
 
 
@@ -461,25 +432,16 @@ export const logicMinesweeperApp: App = {
 
   cleanup(): void {
     isCurrentAppActive = false;
-    for (const timer of pressTimers.values()) {
-      clearTimeout(timer);
-    }
-    pressTimers.clear();
-    longPressedPads.clear();
   },
 
   onNoteOn(e: NoteMessageEvent): void {
     const padId = e.note.number;
-    const velocity = e.note.rawAttack;
-
-    if (velocity > 0) {
-      handleGridPressStart(padId);
-    }
+    handleGridShortPress(padId);
   },
 
-  onNoteOff(e: NoteMessageEvent): void {
+  onNoteOnLongPress(e: NoteMessageEvent): void {
     const padId = e.note.number;
-    handleGridPressEnd(padId);
+    handleGridLongPress(padId);
   },
 
   onControlChange(e: ControlChangeMessageEvent): void {

@@ -159,4 +159,86 @@ describe("AppManager", () => {
     expect(mockApp2.init).not.toHaveBeenCalled();
     expect(grid.setMenuRGB).toHaveBeenCalledWith(79, 20, 20, 20); // Restored inactive color
   });
+
+  it("should trigger onNoteOnLongPress and onControlChangeLongPress if buttons are held", () => {
+    // Let's define long press handlers on a mock app
+    const longPressApp: App = {
+      name: "Long Press App",
+      init: vi.fn(),
+      cleanup: vi.fn(),
+      onNoteOn: vi.fn(),
+      onNoteOff: vi.fn(),
+      onControlChange: vi.fn(),
+      onNoteOnLongPress: vi.fn(),
+      onControlChangeLongPress: vi.fn(),
+    };
+
+    const lpManager = new AppManager();
+    lpManager.registerApp(89, longPressApp);
+    lpManager.init();
+
+    const noteonCallback = listeners["noteon"];
+    const noteoffCallback = listeners["noteoff"];
+    const ccCallback = listeners["controlchange"];
+
+    expect(noteonCallback).toBeDefined();
+    expect(noteoffCallback).toBeDefined();
+    expect(ccCallback).toBeDefined();
+
+    // 1. Test Note Long Press
+    const mockNoteEvent = { note: { number: 12, rawAttack: 127 } } as any;
+    noteonCallback!(mockNoteEvent);
+
+    // Fast-forward 200ms: should not trigger long press yet
+    vi.advanceTimersByTime(200);
+    expect(longPressApp.onNoteOnLongPress).not.toHaveBeenCalled();
+    expect(longPressApp.onNoteOn).not.toHaveBeenCalled();
+
+    // Fast-forward another 200ms (total 400ms): should trigger long press
+    vi.advanceTimersByTime(200);
+    expect(longPressApp.onNoteOnLongPress).toHaveBeenCalledWith(mockNoteEvent);
+    expect(longPressApp.onNoteOn).not.toHaveBeenCalled();
+
+    // Release (NoteOff): should not trigger short press (onNoteOn)
+    const mockNoteOffEvent = { note: { number: 12, rawAttack: 0 } } as any;
+    noteoffCallback!(mockNoteOffEvent);
+    expect(longPressApp.onNoteOn).not.toHaveBeenCalled();
+    expect(longPressApp.onNoteOff).toHaveBeenCalledWith(mockNoteOffEvent);
+
+    // 2. Test Note Short Press
+    vi.clearAllMocks();
+    noteonCallback!(mockNoteEvent);
+    vi.advanceTimersByTime(200);
+    noteoffCallback!(mockNoteOffEvent);
+
+    // Should trigger short press (onNoteOn) on release
+    expect(longPressApp.onNoteOn).toHaveBeenCalledWith(mockNoteEvent);
+    expect(longPressApp.onNoteOnLongPress).not.toHaveBeenCalled();
+    expect(longPressApp.onNoteOff).toHaveBeenCalledWith(mockNoteOffEvent);
+
+    // 3. Test CC Long Press
+    const mockCCPressEvent = { controller: { number: 92 }, message: { data: [0xb0, 92, 127] } } as any;
+    ccCallback!(mockCCPressEvent);
+
+    vi.advanceTimersByTime(200);
+    expect(longPressApp.onControlChangeLongPress).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(200);
+    expect(longPressApp.onControlChangeLongPress).toHaveBeenCalledWith(mockCCPressEvent);
+    expect(longPressApp.onControlChange).not.toHaveBeenCalled();
+
+    // CC release
+    const mockCCReleaseEvent = { controller: { number: 92 }, message: { data: [0xb0, 92, 0] } } as any;
+    ccCallback!(mockCCReleaseEvent);
+    expect(longPressApp.onControlChange).not.toHaveBeenCalled();
+
+    // 4. Test CC Short Press
+    vi.clearAllMocks();
+    ccCallback!(mockCCPressEvent);
+    vi.advanceTimersByTime(200);
+    ccCallback!(mockCCReleaseEvent);
+
+    expect(longPressApp.onControlChange).toHaveBeenCalledWith(mockCCPressEvent);
+    expect(longPressApp.onControlChangeLongPress).not.toHaveBeenCalled();
+  });
 });

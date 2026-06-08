@@ -71,15 +71,31 @@ describe("logicMinesweeper.ts", () => {
     // Switch to Flag Mode
     minesApp.togglePlayMode();
 
-    // Flag (r=0, c=0, pad 11)
-    minesApp.handleGridPress(11);
-    expect(minesApp.board[0]![0]!.flagged).toBe(true);
-    expect(grid.setRGB).toHaveBeenCalledWith(11, 0, 0, 127); // Blue for Flagged
+    // Find an unrevealed cell dynamically
+    let unrevealedPadId = -1;
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        if (!minesApp.board[r]![c]!.revealed) {
+          unrevealedPadId = (r + 1) * 10 + (c + 1);
+          break;
+        }
+      }
+      if (unrevealedPadId !== -1) break;
+    }
+    expect(unrevealedPadId).not.toBe(-1);
+
+    const targetR = Math.floor(unrevealedPadId / 10) - 1;
+    const targetC = (unrevealedPadId % 10) - 1;
+
+    // Flag the unrevealed cell
+    minesApp.handleGridPress(unrevealedPadId);
+    expect(minesApp.board[targetR]![targetC]!.flagged).toBe(true);
+    expect(grid.setRGB).toHaveBeenCalledWith(unrevealedPadId, 0, 0, 127); // Blue for Flagged
 
     // Unflag
-    minesApp.handleGridPress(11);
-    expect(minesApp.board[0]![0]!.flagged).toBe(false);
-    expect(grid.setRGB).toHaveBeenCalledWith(11, 15, 15, 15); // Reverts to dim white
+    minesApp.handleGridPress(unrevealedPadId);
+    expect(minesApp.board[targetR]![targetC]!.flagged).toBe(false);
+    expect(grid.setRGB).toHaveBeenCalledWith(unrevealedPadId, 15, 15, 15); // Reverts to dim white
   });
 
   it("should trigger game over when revealing a mine", () => {

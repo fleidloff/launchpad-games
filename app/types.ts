@@ -18,4 +18,6 @@ export interface App {
   onNoteOn?(e: NoteMessageEvent): void;
   onNoteOff?(e: NoteMessageEvent): void;
   onControlChange?(e: ControlChangeMessageEvent): void;
+  onNoteOnLongPress?(e: NoteMessageEvent): void;
+  onControlChangeLongPress?(e: ControlChangeMessageEvent): void;
 }
