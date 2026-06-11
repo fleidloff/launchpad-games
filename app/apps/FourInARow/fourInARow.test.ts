@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as fourInARow from "./fourInARow";
 import * as grid from "../../core/grid";
 
-// Mock the grid module
 vi.mock("../../core/grid", () => ({
   getColor: vi.fn(),
   setRGB: vi.fn(),
@@ -11,7 +10,6 @@ vi.mock("../../core/grid", () => ({
   clearGrid: vi.fn(),
 }));
 
-// Mock the midi module
 vi.mock("../../core/midi", () => ({
   lpInput: {
     removeListener: vi.fn(),
@@ -30,11 +28,10 @@ describe("fourInARow.ts", () => {
     expect(fourInARow.board.every(row => row.every(cell => cell === 0))).toBe(true);
     expect(fourInARow.currentPlayer).toBe(1);
     expect(grid.clearGrid).toHaveBeenCalled();
-    expect(grid.setRGB).toHaveBeenCalledTimes(8); // Top row initialization
+    expect(grid.setRGB).toHaveBeenCalledTimes(8);
   });
 
   it("should detect a horizontal win", () => {
-    // Manually set up a horizontal line for player 1
     fourInARow.board[0]![0] = 1;
     fourInARow.board[0]![1] = 1;
     fourInARow.board[0]![2] = 1;
@@ -46,7 +43,6 @@ describe("fourInARow.ts", () => {
   });
 
   it("should detect a vertical win", () => {
-    // Manually set up a vertical line for player 2
     fourInARow.board[0]![5] = 2;
     fourInARow.board[1]![5] = 2;
     fourInARow.board[2]![5] = 2;

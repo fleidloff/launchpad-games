@@ -1,11 +1,11 @@
 import type { App } from "../../types";
 import { setRGB, clearGrid } from "../../core/grid";
-import { Output } from "webmidi";
 
-// Soft, steady ambient colors (Restricted to 0-127 for Launchpad X)
-const COLOR_HOURS = { r: 0, g: 32, b: 127 }; // Solid Blue Core
-const COLOR_MINUTES = { r: 0, g: 100, b: 20 }; // Smooth Emerald Track
-const COLOR_SECONDS = { r: 110, g: 10, b: 0 }; // Smooth Crimson Track
+type Rgb = [number, number, number];
+
+const HOURS_RGB: Rgb = [0, 32, 127];
+const MINUTES_RGB: Rgb = [0, 100, 20];
+const SECONDS_RGB: Rgb = [110, 10, 0];
 
 interface ClockState {
   clockInterval: NodeJS.Timeout | null;
@@ -15,113 +15,60 @@ const state: ClockState = {
   clockInterval: null,
 };
 
-// --- PRE-COMPUTED COORDINATE TRACKS FOR SMOOTH SWEEPS ---
-
-// Outer border tracking clockwise starting from top-left (Row 8, Col 1)
 const OUTER_RING_PADS = [
-  85,
-  86,
-  87,
-  88, // Top Row ->
-  78,
-  68,
-  58,
-  48,
-  38,
-  28,
-  18, // Right Col |v
-  17,
-  16,
-  15,
-  14,
-  13,
-  12,
-  11, // Bottom Row <-
-  21,
-  31,
-  41,
-  51,
-  61,
-  71, // Left Col |^
-  81,
-  82,
-  83,
-  84,
+  85, 86, 87, 88, 78, 68, 58, 48, 38, 28, 18, 17, 16, 15, 14, 13, 12, 11, 21,
+  31, 41, 51, 61, 71, 81, 82, 83, 84,
 ];
 
-// Inner border tracking clockwise starting from row 7, col 2
 const INNER_RING_PADS = [
-  75,
-  76,
-  77, // Inner Top Row ->
-  67,
-  57,
-  47,
-  37, // Inner Right Col |v
-  27,
-  26,
-  25,
-  24,
-  23,
-  22, // Inner Bottom Row <-
-  32,
-  42,
-  52,
-  62, // Inner Left Col |^
-  72,
-  73,
+  75, 76, 77, 67, 57, 47, 37, 27, 26, 25, 24, 23, 22, 32, 42, 52, 62, 72, 73,
   74,
 ];
 
-// 16 Center pads filled from bottom to top rows cleanly
 const CENTER_CORE_PADS = [65, 66, 56, 46, 36, 35, 34, 33, 43, 53, 63, 64];
 
-function updateClock(): void {
-  // Clear layout buffer before plotting frame state
-  // clearGrid();
+interface TrackFill {
+  activePadCount: number;
+  rgb: Rgb;
+}
 
+function renderTrack(pads: readonly number[], fill: TrackFill): void {
+  pads.slice(0, fill.activePadCount).forEach((padId) => {
+    setRGB(padId, fill.rgb);
+  });
+  if (fill.activePadCount === 0) {
+    pads.forEach((padId) => {
+      setRGB(padId, [0, 0, 0]);
+    });
+  }
+}
+
+function hoursFractionOfDial(hours: number): number {
+  return hours === 0 ? 12 : hours / 12;
+}
+
+function updateClock(): void {
   const now = new Date();
-  const hours = now.getHours() % 12; // 12-hour format fits the 16-pad core beautifully
+  const hours = now.getHours() % 12;
   const minutes = now.getMinutes();
   const seconds = now.getSeconds();
 
-  // 1. Map Seconds to Outer Ring (Linear scaling: 60 seconds mapped across 28 pads)
-  const activeSecondsPads = Math.ceil((seconds / 60) * OUTER_RING_PADS.length);
-  for (let i = 0; i < activeSecondsPads; i++) {
-    const padId = OUTER_RING_PADS[i];
-    setRGB(padId, COLOR_SECONDS.r, COLOR_SECONDS.g, COLOR_SECONDS.b);
-  }
-  if (activeSecondsPads === 0) {
-    OUTER_RING_PADS.forEach((padId) => {
-      setRGB(padId, 0, 0, 0);
-    });
-  }
+  renderTrack(OUTER_RING_PADS, {
+    activePadCount: Math.ceil((seconds / 60) * OUTER_RING_PADS.length),
+    rgb: SECONDS_RGB,
+  });
 
-  // 2. Map Minutes to Inner Ring (Linear scaling: 60 minutes mapped across 20 pads)
-  const activeMinutesPads = Math.ceil((minutes / 60) * INNER_RING_PADS.length);
-  for (let i = 0; i < activeMinutesPads; i++) {
-    const padId = INNER_RING_PADS[i];
-    setRGB(padId, COLOR_MINUTES.r, COLOR_MINUTES.g, COLOR_MINUTES.b);
-  }
-  if (activeMinutesPads === 0) {
-    INNER_RING_PADS.forEach((padId) => {
-      setRGB(padId, 0, 0, 0);
-    });
-  }
+  renderTrack(INNER_RING_PADS, {
+    activePadCount: Math.ceil((minutes / 60) * INNER_RING_PADS.length),
+    rgb: MINUTES_RGB,
+  });
 
-  // 3. Map Hours to Center Core (Linear scaling: 12 hours mapped across 16 pads)
-  const activeHoursPads = Math.ceil(
-    (hours === 0 ? 12 : hours / 12) * CENTER_CORE_PADS.length
-  );
-  for (let i = 0; i < activeHoursPads; i++) {
-    const padId = CENTER_CORE_PADS[i];
-    setRGB(padId, COLOR_HOURS.r, COLOR_HOURS.g, COLOR_HOURS.b);
-  }
-  if (activeHoursPads === 0) {
-    CENTER_CORE_PADS.forEach((padId) => {
-      setRGB(padId, 0, 0, 0);
-    });
-  }
+  renderTrack(CENTER_CORE_PADS, {
+    activePadCount: Math.ceil(
+      hoursFractionOfDial(hours) * CENTER_CORE_PADS.length
+    ),
+    rgb: HOURS_RGB,
+  });
 }
 
 export const matrixClock: App = {
@@ -130,7 +77,6 @@ export const matrixClock: App = {
   init(): void {
     clearGrid();
     updateClock();
-    // 500ms updates ensure second step-transitions are caught instantly without jitter
     state.clockInterval = setInterval(updateClock, 500);
   },
 

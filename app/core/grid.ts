@@ -1,12 +1,25 @@
 import { lpOutput } from "./midi";
-import { 
-  NOVATION_ID, 
-  LAUNCHPAD_X_ID, 
-  CMD_API_SUB_ID, 
-  CMD_LED_CONTROL, 
+import {
+  NOVATION_ID,
+  LAUNCHPAD_X_ID,
+  CMD_API_SUB_ID,
+  CMD_LED_CONTROL,
   LIGHTING_RGB
 } from "./constants";
-import type { Color, RGB, FlashingState } from "../types";
+import type { Color, RGB } from "../types";
+
+export type FlashOptions = {
+  rgb: RGB;
+  duration?: number;
+};
+
+const DEFAULT_FLASH_DURATION = 1500;
+const SYSEX_START = 0xf0;
+const SYSEX_END = 0xf7;
+const PROGRAMMER_MODE = [LAUNCHPAD_X_ID, CMD_API_SUB_ID, 0x0e, 0x03];
+const FIRST_PAD = 11;
+const LAST_PAD = 99;
+const MAX_RGB_VALUE = 127;
 
 const launchpadState: Record<number, Color> = {};
 let animationFrameId: number | null = null;
@@ -16,116 +29,83 @@ function isProtected(padId: number): boolean {
   return PROTECTED_PADS.includes(padId);
 }
 
-// Initialize all possible pads (11 to 99) to 0 (off)
-for (let i = 11; i <= 99; i++) {
+for (let i = FIRST_PAD; i <= LAST_PAD; i++) {
   launchpadState[i] = 0;
 }
 
 export function enterProgrammerMode(): void {
   if (!lpOutput) return;
-  // [Manufacturer ID, Device ID, Command, Mode (03 = Programmer)]
-  lpOutput.sendSysex(NOVATION_ID, [LAUNCHPAD_X_ID, CMD_API_SUB_ID, 0x0e, 0x03]);
+  lpOutput.sendSysex(NOVATION_ID, PROGRAMMER_MODE);
 }
 
-function sendRGB(padId: number, r: number, g: number, b: number): void {
+function clampToMidiRange(v: number): number {
+  const rounded = Math.round(v);
+  return rounded < 0 ? 0 : (rounded > MAX_RGB_VALUE ? MAX_RGB_VALUE : rounded);
+}
+
+function sendRGB(padId: number, rgb: RGB): void {
   if (!lpOutput) return;
 
-  // Clamp RGB to 0-127 as per Launchpad X SysEx specs
-  const clamp = (v: number) => {
-    const rounded = Math.round(v);
-    return rounded < 0 ? 0 : (rounded > 127 ? 127 : rounded);
-  };
-
+  const [r, g, b] = rgb;
   const rawMessage = [
-    0xf0, // SysEx Start
+    SYSEX_START,
     ...NOVATION_ID,
     LAUNCHPAD_X_ID,
     CMD_API_SUB_ID,
     CMD_LED_CONTROL,
     LIGHTING_RGB,
-    padId, 
-    clamp(r),
-    clamp(g),
-    clamp(b),
-    0xf7, // SysEx End
+    padId,
+    clampToMidiRange(r),
+    clampToMidiRange(g),
+    clampToMidiRange(b),
+    SYSEX_END,
   ];
 
   lpOutput.send(rawMessage);
 }
 
-
-export function setRGB(
-  padId: number,
-  r: number = 0,
-  g: number = 0,
-  b: number = 0
-): void {
+export function setRGB(padId: number, rgb: RGB = [0, 0, 0]): void {
   if (isProtected(padId)) return;
-  setRGBInternal(padId, r, g, b);
+  setRGBInternal(padId, rgb);
 }
 
-export function setRGBFlashing(
-  padId: number,
-  r: number,
-  g: number,
-  b: number,
-  duration: number = 1500
-): void {
+export function setRGBFlashing(padId: number, flash: FlashOptions): void {
   if (isProtected(padId)) return;
-  setRGBFlashingInternal(padId, r, g, b, duration);
+  setRGBFlashingInternal(padId, flash);
 }
 
-export function setMenuRGB(
-  padId: number,
-  r: number = 0,
-  g: number = 0,
-  b: number = 0
-): void {
-  setRGBInternal(padId, r, g, b);
+export function setMenuRGB(padId: number, rgb: RGB = [0, 0, 0]): void {
+  setRGBInternal(padId, rgb);
 }
 
-export function setMenuRGBFlashing(
-  padId: number,
-  r: number,
-  g: number,
-  b: number,
-  duration: number = 1500
-): void {
-  setRGBFlashingInternal(padId, r, g, b, duration);
+export function setMenuRGBFlashing(padId: number, flash: FlashOptions): void {
+  setRGBFlashingInternal(padId, flash);
 }
 
-function setRGBInternal(
-  padId: number,
-  r: number = 0,
-  g: number = 0,
-  b: number = 0
-): void {
-  launchpadState[padId] = [r, g, b];
-  sendRGB(padId, r, g, b);
+function setRGBInternal(padId: number, rgb: RGB = [0, 0, 0]): void {
+  launchpadState[padId] = rgb;
+  sendRGB(padId, rgb);
   checkAnimationLoop();
 }
 
-function setRGBFlashingInternal(
-  padId: number,
-  r: number,
-  g: number,
-  b: number,
-  duration: number = 1500
-): void {
+function setRGBFlashingInternal(padId: number, flash: FlashOptions): void {
+  const [r, g, b] = flash.rgb;
   launchpadState[padId] = {
     r,
     g,
     b,
-    duration,
+    duration: flash.duration ?? DEFAULT_FLASH_DURATION,
     startTime: performance.now(),
   };
   checkAnimationLoop();
 }
 
+function isFlashing(color: Color): boolean {
+  return typeof color === "object" && !Array.isArray(color);
+}
+
 function checkAnimationLoop(): void {
-  const hasFlashing = Object.values(launchpadState).some(
-    (c) => typeof c === "object" && !Array.isArray(c)
-  );
+  const hasFlashing = Object.values(launchpadState).some(isFlashing);
 
   if (hasFlashing && animationFrameId === null) {
     animationFrameId = requestAnimationFrame(updateAnimation);
@@ -142,20 +122,16 @@ function updateAnimation(time: number): void {
     if (typeof color === "object" && !Array.isArray(color)) {
       hasFlashing = true;
       const padId = parseInt(padIdStr);
-      const state = color as FlashingState;
 
-      // Calculate oscillation (0 to 1 and back to 0)
-      // Using a triangle wave for "smooth" but linear flashing
-      // Or sine wave for even smoother:
       const phase =
-        ((time - state.startTime) % state.duration) / state.duration;
+        ((time - color.startTime) % color.duration) / color.duration;
       const intensity = (Math.sin(phase * Math.PI * 2 - Math.PI / 2) + 1) / 2;
 
-      const currR = Math.round(state.r * intensity);
-      const currG = Math.round(state.g * intensity);
-      const currB = Math.round(state.b * intensity);
-
-      sendRGB(padId, currR, currG, currB);
+      sendRGB(padId, [
+        Math.round(color.r * intensity),
+        Math.round(color.g * intensity),
+        Math.round(color.b * intensity),
+      ]);
     }
   }
 
@@ -167,27 +143,25 @@ function updateAnimation(time: number): void {
 }
 
 export function clearGrid(): void {
-  for (let i = 11; i <= 99; i++) {
+  for (let i = FIRST_PAD; i <= LAST_PAD; i++) {
     if (!isProtected(i)) {
       setRGBInternal(i);
     }
   }
 }
 
+function isOff([r, g, b]: RGB): boolean {
+  return r === 0 && g === 0 && b === 0;
+}
+
 export function getColor(padId: number): RGB | null {
   const color = launchpadState[padId];
 
-  if (Array.isArray(color)) {
-    const [r, g, b] = color;
-    if (r === 0 && g === 0 && b === 0) return null;
-    return [r, g, b];
+  if (typeof color === "number" || color === undefined) return null;
+
+  if (!Array.isArray(color)) {
+    return [color.r, color.g, color.b];
   }
 
-  if (typeof color === "object" && color !== null) {
-    const { r, g, b } = color as FlashingState;
-    // Even if currently flashing to 0, we return the target color
-    return [r, g, b];
-  }
-
-  return null;
+  return isOff(color) ? null : [...color];
 }

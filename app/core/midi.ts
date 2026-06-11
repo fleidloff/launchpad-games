@@ -23,29 +23,29 @@ export async function initMidi(onReady: () => void): Promise<void> {
   }
 }
 
+function setStatus(text: string, className: string): void {
+  const statusDiv = document.getElementById("status");
+  if (!statusDiv) return;
+  statusDiv.innerText = text;
+  statusDiv.className = className;
+}
+
 function checkDevices(onReady: () => void): void {
   lpInput = WebMidi.inputs.find((i) => i.name.includes("Launchpad X"));
   lpOutput = WebMidi.outputs.find((o) => o.name.includes("Launchpad X"));
 
-  const statusDiv = document.getElementById("status");
-
-  if (lpInput && lpOutput) {
-    if (statusDiv) {
-      statusDiv.innerText = "Launchpad X Connected!";
-      statusDiv.className = "connected";
-    }
-
-    if (!isInitialized) {
-      setTimeout(() => {
-        onReady();
-        isInitialized = true;
-      }, 100);
-    }
-  } else {
-    if (statusDiv) {
-      statusDiv.innerText = "Launchpad X Not Found";
-      statusDiv.className = "disconnected";
-    }
+  if (!lpInput || !lpOutput) {
+    setStatus("Launchpad X Not Found", "disconnected");
     isInitialized = false;
+    return;
+  }
+
+  setStatus("Launchpad X Connected!", "connected");
+
+  if (!isInitialized) {
+    setTimeout(() => {
+      onReady();
+      isInitialized = true;
+    }, 100);
   }
 }

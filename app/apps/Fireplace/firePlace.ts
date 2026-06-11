@@ -1,115 +1,135 @@
-import type { App } from "../../types";
+import type { App, RGB } from "../../types";
 import type { NoteMessageEvent } from "webmidi";
 import { setRGB, clearGrid } from "../../core/grid";
 
-const TICK_INTERVAL_MS = 140; // Slightly slower frame pacing for distinct pixel-art tracking
+const TICK_INTERVAL_MS = 140;
+const COLUMN_COUNT = 8;
+const FUEL_BED_OFFSETS = [3, 1.8, 0.6, 0.1] as const;
+const FUEL_BED_SPREADS = [1.5, 1, 0.8, 0.3] as const;
+const CORE_COOLING_RATE = 0.45;
+const FLANK_COOLING_RATE = 0.75;
+const STOKE_BURST_INTENSITY = 4.8;
+const STOKE_DECAY_PER_TICK = 0.2;
+const STOKED_LOG_THRESHOLD = 1.2;
 
 interface FireplaceState {
-  heatGrid: number[][]; // Columns 1-8, Rows 0-7 internal
-  simInterval: NodeJS.Timeout | null;
+  heatGrid: number[][];
+  simInterval: ReturnType<typeof setInterval> | null;
   stokeIntensity: number;
 }
 
+function createHeatGrid(): number[][] {
+  return Array.from({ length: 9 }, () => Array.from({ length: 8 }, () => 0));
+}
+
 const state: FireplaceState = {
-  heatGrid: Array.from({ length: 9 }, () => Array(8).fill(0)),
+  heatGrid: createHeatGrid(),
   simInterval: null,
   stokeIntensity: 0,
 };
 
-// --- STARK PIXEL ART BANDING COLOR PALETTE ---
-function getPixelArtColor(heat: number): { r: number; g: number; b: number } {
-  if (heat > 4.2) return { r: 127, g: 127, b: 110 }; // Blinding White-Hot Sparks
-  if (heat > 2.8) return { r: 127, g: 115, b: 0 }; // Sharp Bright Yellow Core
-  if (heat > 1.5) return { r: 127, g: 40, b: 0 }; // Rich Silhouette Orange
-  if (heat > 0.5) return { r: 75, g: 5, b: 0 }; // Dark Ashy Red Tendrils
-  return { r: 0, g: 0, b: 0 }; // Negative Space (Off)
+function getPixelArtColor(heat: number): RGB {
+  if (heat > 4.2) return [127, 127, 110];
+  if (heat > 2.8) return [127, 115, 0];
+  if (heat > 1.5) return [127, 40, 0];
+  if (heat > 0.5) return [75, 5, 0];
+  return [0, 0, 0];
+}
+
+function heatAt(col: number, row: number): number {
+  return state.heatGrid[col]?.[row] ?? 0;
+}
+
+function baseHeatForColumn(col: number): number {
+  const distanceFromCenter = Math.min(Math.abs(col - 4), Math.abs(col - 5));
+  const offset = FUEL_BED_OFFSETS[distanceFromCenter] ?? 0;
+  const spread = FUEL_BED_SPREADS[distanceFromCenter] ?? 0;
+  return offset + Math.random() * spread;
+}
+
+function refreshFuelBed(): void {
+  const stokeBoost = Math.max(0, state.stokeIntensity);
+  for (let col = 1; col <= COLUMN_COUNT; col++) {
+    const column = state.heatGrid[col];
+    if (column) {
+      column[0] = baseHeatForColumn(col) + stokeBoost;
+    }
+  }
+}
+
+function driftedSourceColumn(col: number): number {
+  const randomFactor = Math.random();
+  if (randomFactor < 0.25) return col - 1;
+  if (randomFactor > 0.75) return col + 1;
+  return col;
+}
+
+function sourceHeatFor(col: number, row: number): number {
+  const sourceCol = driftedSourceColumn(col);
+  const isInsideGrid = sourceCol >= 1 && sourceCol <= COLUMN_COUNT;
+  return isInsideGrid ? heatAt(sourceCol, row - 1) : heatAt(col, row - 1);
+}
+
+function coolingRateForColumn(col: number): number {
+  const isFlank = col <= 2 || col >= 7;
+  return isFlank ? FLANK_COOLING_RATE : CORE_COOLING_RATE;
+}
+
+function propagateHeatUpward(): void {
+  for (let row = 7; row >= 1; row--) {
+    for (let col = 1; col <= COLUMN_COUNT; col++) {
+      const column = state.heatGrid[col];
+      if (column) {
+        column[row] = Math.max(
+          0,
+          sourceHeatFor(col, row) - coolingRateForColumn(col),
+        );
+      }
+    }
+  }
+}
+
+function restingLogColor(col: number): RGB {
+  if (col === 1 || col === 8) return [15, 6, 2];
+  if (col === 2 || col === 7) return [35, 10, 2];
+  const corePulse = 55 + Math.floor(Math.sin(Date.now() / 150 + col) * 15);
+  return [corePulse, 12, 0];
+}
+
+function renderLogs(): void {
+  const isStoked = state.stokeIntensity > STOKED_LOG_THRESHOLD;
+  for (let col = 1; col <= COLUMN_COUNT; col++) {
+    setRGB(10 + col, isStoked ? [127, 127, 80] : restingLogColor(col));
+  }
+}
+
+function renderFlamePad(col: number, row: number): void {
+  const color = getPixelArtColor(heatAt(col, row));
+  const padId = (row + 1) * 10 + col;
+  if (padId > 18) {
+    setRGB(padId, color);
+  }
+}
+
+function renderFlames(): void {
+  for (let row = 1; row <= 7; row++) {
+    for (let col = 1; col <= COLUMN_COUNT; col++) {
+      renderFlamePad(col, row);
+    }
+  }
 }
 
 function updateSimulation(): void {
   if (state.stokeIntensity > 0) {
-    state.stokeIntensity -= 0.2;
+    state.stokeIntensity -= STOKE_DECAY_PER_TICK;
   }
 
-  // 1. Generate a Centered Fuel Bed Shapes (Pyramid Thermal Core Architecture)
-  for (let col = 1; col <= 8; col++) {
-    let baseHeat = 0;
+  refreshFuelBed();
+  propagateHeatUpward();
 
-    // Naturally feed more thermal energy to center columns to force a triangle/bonfire geometry
-    if (col === 4 || col === 5) {
-      baseHeat = 3.0 + Math.random() * 1.5;
-    } else if (col === 3 || col === 6) {
-      baseHeat = 1.8 + Math.random() * 1.0;
-    } else if (col === 2 || col === 7) {
-      baseHeat = 0.6 + Math.random() * 0.8;
-    } else {
-      baseHeat = 0.1 + Math.random() * 0.3; // Whispy edges
-    }
-
-    state.heatGrid[col][0] = baseHeat + Math.max(0, state.stokeIntensity);
-  }
-
-  // 2. Rising and Steeper Thermal Dissipation Math
-  for (let row = 7; row >= 1; row--) {
-    for (let col = 1; col <= 8; col++) {
-      // Create sharp upward tearing artifacts by introducing intentional drift bias
-      const randomFactor = Math.random();
-      let sourceCol = col;
-
-      if (randomFactor < 0.25) sourceCol = col - 1;
-      else if (randomFactor > 0.75) sourceCol = col + 1;
-
-      let sourceHeat = 0;
-      if (sourceCol >= 1 && sourceCol <= 8) {
-        sourceHeat = state.heatGrid[sourceCol][row - 1];
-      } else {
-        sourceHeat = state.heatGrid[col][row - 1];
-      }
-
-      // Cool the flanks much faster than the core to keep the fire tall and pointed
-      let coolingRate = 0.45;
-      if (col === 1 || col === 8 || col === 2 || col === 7) {
-        coolingRate = 0.75; // Fast edge decay for floating sparks effect
-      }
-
-      state.heatGrid[col][row] = Math.max(0, sourceHeat - coolingRate);
-    }
-  }
-
-  // 3. Render Pixel State Machine directly to Hardware Layout
   clearGrid();
-
-  // Draw Stationary Pixel-Art Firewood Logs Base (Physical Row 1)
-  const isStoked = state.stokeIntensity > 1.2;
-  for (let col = 1; col <= 8; col++) {
-    if (isStoked) {
-      setRGB(10 + col, 127, 127, 80); // White-flash log ignite effect
-    } else {
-      // Classic pixel art logs: Dark outer ends, hot glowing embers in the middle
-      if (col === 1 || col === 8) {
-        setRGB(10 + col, 15, 6, 2); // Dark Charcoal Ends
-      } else if (col === 2 || col === 7) {
-        setRGB(10 + col, 35, 10, 2); // Warm Wood
-      } else {
-        // Deep pulsating glowing ember core
-        const corePulse =
-          55 + Math.floor(Math.sin(Date.now() / 150 + col) * 15);
-        setRGB(10 + col, corePulse, 12, 0);
-      }
-    }
-  }
-
-  // Draw Upward Flame Vectors (Physical Rows 2 to 8)
-  for (let row = 1; row <= 7; row++) {
-    for (let col = 1; col <= 8; col++) {
-      const heat = state.heatGrid[col][row];
-      const color = getPixelArtColor(heat);
-      const padId = (row + 1) * 10 + col;
-
-      if (padId > 18) {
-        setRGB(padId, color.r, color.g, color.b);
-      }
-    }
-  }
+  renderLogs();
+  renderFlames();
 }
 
 export const fireplace: App = {
@@ -117,7 +137,7 @@ export const fireplace: App = {
 
   init(): void {
     state.stokeIntensity = 0;
-    state.heatGrid = Array.from({ length: 9 }, () => Array(8).fill(0));
+    state.heatGrid = createHeatGrid();
     state.simInterval = setInterval(updateSimulation, TICK_INTERVAL_MS);
   },
 
@@ -133,8 +153,7 @@ export const fireplace: App = {
     const row = Math.floor(padId / 10);
 
     if (row === 1) {
-      // Inject a bigger heat burst to make the flare look structural
-      state.stokeIntensity = 4.8;
+      state.stokeIntensity = STOKE_BURST_INTENSITY;
       updateSimulation();
     }
   },

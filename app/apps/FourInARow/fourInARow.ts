@@ -1,17 +1,13 @@
-import {
-  clearGrid,
-  setRGB,
-  setRGBFlashing,
-} from "../../core/grid";
+import { clearGrid, setRGB, setRGBFlashing } from "../../core/grid";
 import type { App } from "../../types";
 import type { ControlChangeMessageEvent, NoteMessageEvent } from "webmidi";
 
-export type Player = 1 | 2; // 1 = Green, 2 = Red
+export type Player = 1 | 2;
 export type Cell = Player | 0;
 
 const ROWS = 8;
 const COLS = 8;
-const FALL_SPEED = 100; // ms per row
+const FALL_SPEED_MS_PER_ROW = 100;
 
 export let board: Cell[][] = [];
 export let currentPlayer: Player = 1;
@@ -24,12 +20,19 @@ export function setGameOver(value: boolean): void {
 }
 
 const PLAYER_COLORS: Record<Player, [number, number, number]> = {
-  1: [0, 127, 0], // Green
-  2: [127, 0, 0], // Red
+  1: [0, 127, 0],
+  2: [127, 0, 0],
 };
 
+function padIdAt(row: number, col: number): number {
+  return (row + 1) * 10 + (col + 1);
+}
+
+function cellAt(row: number, col: number): Cell | undefined {
+  return board[row]?.[col];
+}
+
 export function resetGame(): void {
-  console.log("[FourInARow] Resetting game...");
   clearGrid();
   board = Array(ROWS)
     .fill(0)
@@ -43,118 +46,117 @@ export function resetGame(): void {
 export function updateTopRow(): void {
   const color = PLAYER_COLORS[currentPlayer];
   for (let col = 0; col < COLS; col++) {
-    setRGB(91 + col, ...color);
+    setRGB(91 + col, color);
   }
+}
+
+function findLowestEmptyRow(col: number): number {
+  for (let r = 0; r < ROWS; r++) {
+    if (cellAt(r, col) === 0) return r;
+  }
+  return -1;
+}
+
+function placeDisc(row: number, col: number): void {
+  const rowArr = board[row];
+  if (rowArr) {
+    rowArr[col] = currentPlayer;
+  }
+}
+
+function resolveTurn(row: number, col: number): void {
+  const winningLine = checkWin(row, col);
+  if (winningLine) {
+    handleWin(winningLine);
+    return;
+  }
+  if (board.every((boardRow) => boardRow.every((cell) => cell !== 0))) {
+    handleDraw();
+    return;
+  }
+  currentPlayer = currentPlayer === 1 ? 2 : 1;
+  updateTopRow();
+  isAnimating = false;
 }
 
 export async function handleColumnSelect(col: number): Promise<void> {
   if (isAnimating || isGameOver) return;
 
-  // Find the lowest empty row
-  let targetRow = -1;
-  for (let r = 0; r < ROWS; r++) {
-    if (board[r]?.[col] === 0) {
-      targetRow = r;
-      break;
-    }
-  }
-
-  if (targetRow === -1) return; // Column full
+  const targetRow = findLowestEmptyRow(col);
+  if (targetRow === -1) return;
 
   isAnimating = true;
-  await animateFall(col, targetRow, currentPlayer);
+  await animateFall({ col, targetRow, player: currentPlayer });
 
-  // If the app was deactivated during the animation, abort setting board state
   if (!isCurrentAppActive) {
     isAnimating = false;
     return;
   }
 
-  const rowArr = board[targetRow];
-  if (rowArr) {
-    rowArr[col] = currentPlayer;
-  }
+  placeDisc(targetRow, col);
+  resolveTurn(targetRow, col);
+}
 
-  const winningLine = checkWin(targetRow, col);
-  if (winningLine) {
-    handleWin(winningLine);
-  } else if (board.every((row) => row.every((cell) => cell !== 0))) {
-    handleDraw();
-  } else {
-    currentPlayer = currentPlayer === 1 ? 2 : 1;
-    updateTopRow();
-    isAnimating = false;
+export async function animateFall(fall: {
+  col: number;
+  targetRow: number;
+  player: Player;
+}): Promise<void> {
+  const color = PLAYER_COLORS[fall.player];
+
+  for (let r = 7; r >= fall.targetRow; r--) {
+    if (!isCurrentAppActive) break;
+
+    setRGB(padIdAt(r, fall.col), color);
+
+    if (r < 7) {
+      setRGB(padIdAt(r + 1, fall.col), [0, 0, 0]);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, FALL_SPEED_MS_PER_ROW));
   }
 }
 
-export async function animateFall(
-  col: number,
-  targetRow: number,
-  player: Player
-): Promise<void> {
-  const color = PLAYER_COLORS[player];
-  const padOffset = (c: number, r: number) => (r + 1) * 10 + (c + 1);
+const WIN_DIRECTIONS: [number, number][] = [
+  [0, 1],
+  [1, 0],
+  [1, 1],
+  [1, -1],
+];
 
-  // Animate from row 7 (top) down to targetRow
-  for (let r = 7; r >= targetRow; r--) {
-    if (!isCurrentAppActive) break;
-
-    const padId = padOffset(col, r);
-    setRGB(padId, ...color);
-
-    if (r < 7) {
-      const prevPadId = padOffset(col, r + 1);
-      setRGB(prevPadId, 0, 0, 0);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, FALL_SPEED));
+function collectRun(
+  origin: [number, number],
+  direction: [number, number]
+): [number, number][] {
+  const [row, col] = origin;
+  const [dr, dc] = direction;
+  const player = cellAt(row, col);
+  const run: [number, number][] = [];
+  for (let i = 1; i < 4; i++) {
+    const next: [number, number] = [row + dr * i, col + dc * i];
+    if (cellAt(next[0], next[1]) !== player) break;
+    run.push(next);
   }
+  return run;
+}
+
+function lineThrough(
+  origin: [number, number],
+  direction: [number, number]
+): [number, number][] {
+  return [
+    origin,
+    ...collectRun(origin, direction),
+    ...collectRun(origin, [-direction[0], -direction[1]]),
+  ];
 }
 
 export function checkWin(row: number, col: number): [number, number][] | null {
-  const player = board[row]?.[col];
+  const player = cellAt(row, col);
   if (player === undefined || player === 0) return null;
 
-  const directions: [number, number][] = [
-    [0, 1], // Horizontal
-    [1, 0], // Vertical
-    [1, 1], // Diagonal \
-    [1, -1], // Diagonal /
-  ];
-
-  for (const [dr, dc] of directions) {
-    let winningCells: [number, number][] = [[row, col]];
-
-    // Check one direction
-    for (let i = 1; i < 4; i++) {
-      const nr = row + dr * i;
-      const nc = col + dc * i;
-      if (
-        nr >= 0 &&
-        nr < ROWS &&
-        nc >= 0 &&
-        nc < COLS &&
-        board[nr]?.[nc] === player
-      ) {
-        winningCells.push([nr, nc]);
-      } else break;
-    }
-
-    // Check opposite direction
-    for (let i = 1; i < 4; i++) {
-      const nr = row - dr * i;
-      const nc = col - dc * i;
-      if (
-        nr >= 0 &&
-        nr < ROWS &&
-        nc >= 0 &&
-        nc < COLS &&
-        board[nr]?.[nc] === player
-      ) {
-        winningCells.push([nr, nc]);
-      } else break;
-    }
-
+  for (const direction of WIN_DIRECTIONS) {
+    const winningCells = lineThrough([row, col], direction);
     if (winningCells.length >= 4) return winningCells;
   }
   return null;
@@ -165,27 +167,33 @@ function handleWin(winningLine: [number, number][]): void {
   isGameOver = true;
   isAnimating = false;
 
-  // Flash only the winning tokens
   for (const [r, c] of winningLine) {
-    const padId = (r + 1) * 10 + (c + 1);
-    setRGBFlashing(padId, ...color);
+    setRGBFlashing(padIdAt(r, c), { rgb: color });
   }
 
-  // Flash top row in winning color
   for (let col = 0; col < COLS; col++) {
-    setRGBFlashing(91 + col, ...color);
+    setRGBFlashing(91 + col, { rgb: color });
   }
 }
 
 function handleDraw(): void {
   isGameOver = true;
   isAnimating = false;
-  // Flash everything red
   for (let i = 11; i <= 88; i++) {
-    setRGBFlashing(i, 127, 0, 0);
+    setRGBFlashing(i, { rgb: [127, 0, 0] });
   }
   for (let i = 91; i <= 98; i++) {
-    setRGBFlashing(i, 127, 0, 0);
+    setRGBFlashing(i, { rgb: [127, 0, 0] });
+  }
+}
+
+function handlePadPress(padId: number): void {
+  if (isGameOver) {
+    resetGame();
+    return;
+  }
+  if (padId >= 91 && padId <= 98) {
+    void handleColumnSelect(padId - 91);
   }
 }
 
@@ -209,17 +217,9 @@ export const fourInARowApp: App = {
   },
 
   onControlChange(e: ControlChangeMessageEvent): void {
-    const padId = e.controller.number;
-    const velocity = e.message.data[2] || 0;
-
+    const velocity = e.message.data[2] ?? 0;
     if (velocity > 0) {
-      if (isGameOver) {
-        resetGame();
-        return;
-      }
-      if (padId >= 91 && padId <= 98) {
-        handleColumnSelect(padId - 91);
-      }
+      handlePadPress(e.controller.number);
     }
-  }
+  },
 };

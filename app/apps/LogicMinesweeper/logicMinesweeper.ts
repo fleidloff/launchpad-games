@@ -1,5 +1,5 @@
 import { clearGrid, setRGB, setRGBFlashing } from "../../core/grid";
-import type { App } from "../../types";
+import type { App, RGB } from "../../types";
 import type { NoteMessageEvent, ControlChangeMessageEvent } from "webmidi";
 
 export type BoardCell = {
@@ -10,41 +10,97 @@ export type BoardCell = {
 };
 
 type Coord = [number, number];
+type Grid = BoardCell[][];
 
 const ROWS = 8;
 const COLS = 8;
 const MINES_COUNT = 10;
 const TOGGLE_BUTTON_PAD = 99;
+const MAX_GENERATION_ATTEMPTS = 1000;
 
-export let board: BoardCell[][] = [];
+const FLAG_RGB: RGB = [0, 0, 127];
+const HIDDEN_RGB: RGB = [15, 15, 15];
+const REVEAL_MODE_RGB: RGB = [0, 80, 0];
+const FLAG_MODE_RGB: RGB = [0, 0, 80];
+const TRIGGERED_MINE_RGB: RGB = [127, 0, 0];
+const HIGH_COUNT_RGB: RGB = [120, 0, 120];
+const WIN_RGB: RGB = [0, 127, 0];
+
+const COUNT_COLORS: Record<number, RGB> = {
+  0: [0, 0, 0],
+  1: [0, 60, 0],
+  2: [100, 100, 0],
+  3: [127, 40, 0],
+};
+
+const NEIGHBOR_OFFSETS: Coord[] = [
+  [-1, -1], [-1, 0], [-1, 1],
+  [0, -1], [0, 1],
+  [1, -1], [1, 0], [1, 1],
+];
+
+const ALL_COORDS: Coord[] = Array.from({ length: ROWS * COLS }, (_unused, i): Coord => [
+  Math.floor(i / COLS),
+  i % COLS,
+]);
+
+export let board: Grid = [];
 export let isGenerated = false;
 export let isGameOver = false;
 export let isGameWon = false;
 export let playMode: "reveal" | "flag" = "reveal";
-let isCurrentAppActive = false;
 
+function inBounds(r: number, c: number): boolean {
+  return r >= 0 && r < ROWS && c >= 0 && c < COLS;
+}
 
+function at(grid: Grid, [r, c]: Coord): BoardCell | undefined {
+  return grid[r]?.[c];
+}
+
+function padIdOf(r: number, c: number): number {
+  return (r + 1) * 10 + (c + 1);
+}
+
+function getNeighbors(r: number, c: number): Coord[] {
+  return NEIGHBOR_OFFSETS
+    .map(([dr, dc]): Coord => [r + dr, c + dc])
+    .filter(([nr, nc]) => inBounds(nr, nc));
+}
+
+function eachCell(grid: Grid, visit: (cell: BoardCell, coord: Coord) => void): void {
+  for (let r = 0; r < ROWS; r++) {
+    const row = grid[r];
+    if (!row) continue;
+    for (let c = 0; c < COLS; c++) {
+      const cell = row[c];
+      if (cell) visit(cell, [r, c]);
+    }
+  }
+}
+
+function createEmptyBoard(): Grid {
+  return Array.from({ length: ROWS }, () =>
+    Array.from({ length: COLS }, () => ({
+      isMine: false,
+      count: 0,
+      revealed: false,
+      flagged: false,
+    }))
+  );
+}
+
+function isGameFinished(): boolean {
+  return isGameOver || isGameWon;
+}
 
 export function resetGame(): void {
-  console.log("[LogicMinesweeper] Resetting game...");
   isGenerated = false;
   isGameOver = false;
   isGameWon = false;
   playMode = "reveal";
 
-  // Build empty board
-  board = Array(ROWS)
-    .fill(null)
-    .map(() =>
-      Array(COLS)
-        .fill(null)
-        .map(() => ({
-          isMine: false,
-          count: 0,
-          revealed: false,
-          flagged: false,
-        }))
-    );
+  board = createEmptyBoard();
 
   clearGrid();
   drawToggleModeButton();
@@ -52,152 +108,102 @@ export function resetGame(): void {
 }
 
 function drawToggleModeButton(): void {
-  if (playMode === "reveal") {
-    setRGB(TOGGLE_BUTTON_PAD, 0, 80, 0); // Green for Reveal
+  setRGB(TOGGLE_BUTTON_PAD, playMode === "reveal" ? REVEAL_MODE_RGB : FLAG_MODE_RGB);
+}
+
+function drawRevealedCell(cell: BoardCell, padId: number): void {
+  if (cell.isMine) {
+    setRGBFlashing(padId, { rgb: TRIGGERED_MINE_RGB, duration: 300 });
+    return;
+  }
+  const color = COUNT_COLORS[cell.count];
+  if (color) {
+    setRGB(padId, color);
   } else {
-    setRGB(TOGGLE_BUTTON_PAD, 0, 0, 80); // Blue for Flag
+    setRGBFlashing(padId, { rgb: HIGH_COUNT_RGB, duration: 1000 });
+  }
+}
+
+function drawCell(cell: BoardCell, padId: number): void {
+  if (cell.revealed) {
+    drawRevealedCell(cell, padId);
+  } else if (cell.flagged) {
+    setRGB(padId, FLAG_RGB);
+  } else {
+    setRGB(padId, HIDDEN_RGB);
   }
 }
 
 function drawBoard(): void {
-  for (let r = 0; r < ROWS; r++) {
-    const rowCells = board[r];
-    if (!rowCells) continue;
-    for (let c = 0; c < COLS; c++) {
-      const cell = rowCells[c];
-      if (!cell) continue;
+  eachCell(board, (cell, [r, c]) => drawCell(cell, padIdOf(r, c)));
+}
 
-      const padId = (r + 1) * 10 + (c + 1);
+function resetCells(): void {
+  eachCell(board, (cell) => {
+    cell.isMine = false;
+    cell.count = 0;
+    cell.revealed = false;
+    cell.flagged = false;
+  });
+}
 
-      if (cell.revealed) {
-        if (cell.isMine) {
-          // Triggered mine (angry red flash)
-          setRGBFlashing(padId, 127, 0, 0, 300);
-        } else if (cell.count === 0) {
-          setRGB(padId, 0, 0, 0); // Off
-        } else if (cell.count === 1) {
-          setRGB(padId, 0, 60, 0); // Dim Green
-        } else if (cell.count === 2) {
-          setRGB(padId, 100, 100, 0); // Bright Yellow
-        } else if (cell.count === 3) {
-          setRGB(padId, 127, 40, 0); // Orange
-        } else {
-          setRGBFlashing(padId, 120, 0, 120, 1000); // Pulse Magenta
-        }
-      } else if (cell.flagged) {
-        setRGB(padId, 0, 0, 127); // Flagged (solid Blue)
-      } else {
-        setRGB(padId, 15, 15, 15); // Unrevealed (dim White)
-      }
+function safeSpotsExcluding(startR: number, startC: number): Coord[] {
+  const forbidden = getNeighbors(startR, startC);
+  forbidden.push([startR, startC]);
+  const isForbidden = (r: number, c: number) =>
+    forbidden.some(([fr, fc]) => fr === r && fc === c);
+  return ALL_COORDS.filter(([r, c]) => !isForbidden(r, c));
+}
+
+function shuffle(items: Coord[]): Coord[] {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const a = result[i];
+    const b = result[j];
+    if (a !== undefined && b !== undefined) {
+      result[i] = b;
+      result[j] = a;
     }
+  }
+  return result;
+}
+
+function placeMinesAvoiding(startR: number, startC: number): void {
+  resetCells();
+  const spots = shuffle(safeSpotsExcluding(startR, startC));
+  for (const spot of spots.slice(0, MINES_COUNT)) {
+    const cell = at(board, spot);
+    if (cell) cell.isMine = true;
   }
 }
 
-function getNeighbors(r: number, c: number): Coord[] {
-  const list: Coord[] = [];
-  for (let dr = -1; dr <= 1; dr++) {
-    for (let dc = -1; dc <= 1; dc++) {
-      if (dr === 0 && dc === 0) continue;
-      const nr = r + dr;
-      const nc = c + dc;
-      if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
-        list.push([nr, nc]);
-      }
-    }
-  }
-  return list;
+function countAdjacentMines(grid: Grid, [r, c]: Coord): number {
+  return getNeighbors(r, c).filter((coord) => at(grid, coord)?.isMine).length;
+}
+
+function assignAdjacentCounts(): void {
+  eachCell(board, (cell, coord) => {
+    if (!cell.isMine) cell.count = countAdjacentMines(board, coord);
+  });
 }
 
 function generateNoGuessBoard(startR: number, startC: number): void {
-  let attempts = 0;
-  const maxAttempts = 1000;
-
-  while (attempts < maxAttempts) {
-    attempts++;
-    // 1. Reset board
-    for (let r = 0; r < ROWS; r++) {
-      const row = board[r];
-      if (row) {
-        for (let c = 0; c < COLS; c++) {
-          const cell = row[c];
-          if (cell) {
-            cell.isMine = false;
-            cell.count = 0;
-            cell.revealed = false;
-            cell.flagged = false;
-          }
-        }
-      }
-    }
-
-    // 2. Distribute mines (avoid startR, startC and neighbors)
-    const forbidden: Coord[] = getNeighbors(startR, startC);
-    forbidden.push([startR, startC]);
-
-    const potentialSpots: Coord[] = [];
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const isForbidden = forbidden.some(([fr, fc]) => fr === r && fc === c);
-        if (!isForbidden) {
-          potentialSpots.push([r, c]);
-        }
-      }
-    }
-
-    // Shuffle and pick 10
-    for (let i = potentialSpots.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      const temp = potentialSpots[i];
-      const nextTemp = potentialSpots[j];
-      if (temp && nextTemp) {
-        potentialSpots[i] = nextTemp;
-        potentialSpots[j] = temp;
-      }
-    }
-
-    const mineSpots = potentialSpots.slice(0, MINES_COUNT);
-    for (const [mr, mc] of mineSpots) {
-      const row = board[mr];
-      if (row) {
-        const cell = row[mc];
-        if (cell) {
-          cell.isMine = true;
-        }
-      }
-    }
-
-    // 3. Calculate adjacent counts
-    for (let r = 0; r < ROWS; r++) {
-      const row = board[r];
-      if (row) {
-        for (let c = 0; c < COLS; c++) {
-          const cell = row[c];
-          if (cell && !cell.isMine) {
-            let count = 0;
-            for (const [nr, nc] of getNeighbors(r, c)) {
-              if (board[nr]?.[nc]?.isMine) count++;
-            }
-            cell.count = count;
-          }
-        }
-      }
-    }
-
-    // 4. Test solvability
+  for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
+    placeMinesAvoiding(startR, startC);
+    assignAdjacentCounts();
     if (isSolvable(startR, startC)) {
-      console.log(`[LogicMinesweeper] Solvable board generated in ${attempts} attempt(s).`);
       isGenerated = true;
       return;
     }
   }
 
-  // Fallback (should very rarely happen)
   console.warn("[LogicMinesweeper] Max generation attempts reached, using fallback.");
   isGenerated = true;
 }
 
-function isSolvable(startR: number, startC: number): boolean {
-  const solved = board.map((row) =>
+function cloneForSolver(grid: Grid): Grid {
+  return grid.map((row) =>
     row.map((cell) => ({
       isMine: cell.isMine,
       count: cell.count,
@@ -205,91 +211,106 @@ function isSolvable(startR: number, startC: number): boolean {
       flagged: false,
     }))
   );
-
-  revealInSolver(solved, startR, startC);
-
-  let progress = true;
-  while (progress) {
-    progress = false;
-
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const cell = solved[r]?.[c];
-        if (!cell || !cell.revealed || cell.count === 0) continue;
-
-        const neighbors = getNeighbors(r, c);
-        let flaggedCount = 0;
-        let unrevealedCount = 0;
-        const unrevealedList: Coord[] = [];
-
-        for (const [nr, nc] of neighbors) {
-          const nCell = solved[nr]?.[nc];
-          if (nCell) {
-            if (nCell.flagged) {
-              flaggedCount++;
-            } else if (!nCell.revealed) {
-              unrevealedCount++;
-              unrevealedList.push([nr, nc]);
-            }
-          }
-        }
-
-        // deduction 1: all remaining are safe
-        if (flaggedCount === cell.count && unrevealedCount > 0) {
-          for (const [ur, uc] of unrevealedList) {
-            revealInSolver(solved, ur, uc);
-          }
-          progress = true;
-        }
-
-        // deduction 2: all remaining are mines
-        if (flaggedCount + unrevealedCount === cell.count && unrevealedCount > 0) {
-          for (const [ur, uc] of unrevealedList) {
-            const urCell = solved[ur]?.[uc];
-            if (urCell && !urCell.flagged) {
-              urCell.flagged = true;
-            }
-          }
-          progress = true;
-        }
-      }
-    }
-  }
-
-  // Verify
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const cell = solved[r]?.[c];
-      if (cell && !cell.isMine && !cell.revealed) {
-        return false;
-      }
-    }
-  }
-  return true;
 }
 
-function revealInSolver(solved: any[][], r: number, c: number): void {
-  const cell = solved[r]?.[c];
-  if (!cell || cell.revealed || cell.flagged) return;
+function canReveal(cell: BoardCell | undefined): cell is BoardCell {
+  return cell !== undefined && !cell.revealed && !cell.flagged;
+}
+
+function revealInSolver(solved: Grid, coord: Coord): void {
+  const [r, c] = coord;
+  const cell = at(solved, coord);
+  if (!canReveal(cell)) return;
 
   cell.revealed = true;
-  if (cell.count === 0) {
-    for (const [nr, nc] of getNeighbors(r, c)) {
-      revealInSolver(solved, nr, nc);
-    }
+  if (cell.count !== 0) return;
+  for (const next of getNeighbors(r, c)) {
+    revealInSolver(solved, next);
   }
+}
+
+function flagInSolver(solved: Grid, coord: Coord): void {
+  const cell = at(solved, coord);
+  if (cell && !cell.flagged) cell.flagged = true;
+}
+
+function isActiveClue(cell: BoardCell | undefined): cell is BoardCell {
+  return cell !== undefined && cell.revealed && cell.count > 0;
+}
+
+type NeighborStatus = { flaggedCount: number; unrevealed: Coord[] };
+
+function neighborStatus(solved: Grid, [r, c]: Coord): NeighborStatus {
+  let flaggedCount = 0;
+  const unrevealed: Coord[] = [];
+  for (const [nr, nc] of getNeighbors(r, c)) {
+    const nCell = at(solved, [nr, nc]);
+    if (!nCell) continue;
+    if (nCell.flagged) flaggedCount++;
+    else if (!nCell.revealed) unrevealed.push([nr, nc]);
+  }
+  return { flaggedCount, unrevealed };
+}
+
+type ClueContext = { count: number; flaggedCount: number; unrevealed: Coord[] };
+
+function applyRules(solved: Grid, ctx: ClueContext): boolean {
+  if (ctx.flaggedCount === ctx.count) {
+    ctx.unrevealed.forEach((coord) => revealInSolver(solved, coord));
+    return true;
+  }
+  if (ctx.flaggedCount + ctx.unrevealed.length === ctx.count) {
+    ctx.unrevealed.forEach((coord) => flagInSolver(solved, coord));
+    return true;
+  }
+  return false;
+}
+
+function deduceAtCell(solved: Grid, coord: Coord): boolean {
+  const cell = at(solved, coord);
+  if (!isActiveClue(cell)) return false;
+
+  const { flaggedCount, unrevealed } = neighborStatus(solved, coord);
+  if (unrevealed.length === 0) return false;
+
+  return applyRules(solved, { count: cell.count, flaggedCount, unrevealed });
+}
+
+function applySolverDeductions(solved: Grid): boolean {
+  let progress = false;
+  for (const coord of ALL_COORDS) {
+    if (deduceAtCell(solved, coord)) progress = true;
+  }
+  return progress;
+}
+
+function allSafeRevealed(solved: Grid): boolean {
+  return ALL_COORDS.every((coord) => {
+    const cell = at(solved, coord);
+    return !cell || cell.isMine || cell.revealed;
+  });
+}
+
+function isSolvable(startR: number, startC: number): boolean {
+  const solved = cloneForSolver(board);
+  revealInSolver(solved, [startR, startC]);
+
+  let progressed = true;
+  while (progressed) {
+    progressed = applySolverDeductions(solved);
+  }
+
+  return allSafeRevealed(solved);
 }
 
 function revealCell(r: number, c: number): void {
-  const row = board[r];
-  if (!row) return;
-  const cell = row[c];
-  if (!cell || cell.revealed || cell.flagged) return;
+  const cell = at(board, [r, c]);
+  if (!canReveal(cell)) return;
 
   cell.revealed = true;
 
   if (cell.isMine) {
-    handleGameOver(r, c);
+    handleGameOver();
     return;
   }
 
@@ -303,122 +324,100 @@ function revealCell(r: number, c: number): void {
 }
 
 function checkWinCondition(): void {
-  let unrevealedSafeCells = 0;
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const cell = board[r]?.[c];
-      if (cell && !cell.isMine && !cell.revealed) {
-        unrevealedSafeCells++;
-      }
-    }
-  }
+  const safeHidden = ALL_COORDS.some((coord) => {
+    const cell = at(board, coord);
+    return cell !== undefined && !cell.isMine && !cell.revealed;
+  });
 
-  if (unrevealedSafeCells === 0) {
-    handleWin();
-  }
+  if (!safeHidden) handleWin();
 }
 
-function handleGameOver(triggeredR: number, triggeredC: number): void {
-  console.log("[LogicMinesweeper] Boom! Game Over.");
+function handleGameOver(): void {
   isGameOver = true;
-
-  // Reveal all mines as red
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const cell = board[r]?.[c];
-      if (cell && cell.isMine) {
-        cell.revealed = true;
-      }
-    }
-  }
-
-  // Redraw board (which draws triggered mine flashing, and others solid red)
+  eachCell(board, (cell) => {
+    if (cell.isMine) cell.revealed = true;
+  });
   drawBoard();
 }
 
 function handleWin(): void {
-  console.log("[LogicMinesweeper] Victory!");
   isGameWon = true;
+  for (const [r, c] of ALL_COORDS) {
+    setRGBFlashing(padIdOf(r, c), { rgb: WIN_RGB, duration: 1000 });
+  }
+}
 
-  // Draw winning pattern (pulse green)
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const padId = (r + 1) * 10 + (c + 1);
-      setRGBFlashing(padId, 0, 127, 0, 1000);
-    }
+function padToCoord(padId: number): Coord | null {
+  const r = Math.floor(padId / 10) - 1;
+  const c = (padId % 10) - 1;
+  return inBounds(r, c) ? [r, c] : null;
+}
+
+function ensureBoardForShortPress([r, c]: Coord): boolean {
+  if (isGenerated) return true;
+  if (playMode === "flag") return false;
+  generateNoGuessBoard(r, c);
+  return true;
+}
+
+function revealInPlay([r, c]: Coord, cell: BoardCell): void {
+  if (cell.flagged) return;
+  revealCell(r, c);
+  if (!isGameFinished()) drawBoard();
+}
+
+function toggleFlagInPlay(cell: BoardCell): void {
+  if (cell.revealed) return;
+  cell.flagged = !cell.flagged;
+  drawBoard();
+}
+
+function applyShortPressAction(coord: Coord): void {
+  const cell = at(board, coord);
+  if (!cell) return;
+  if (playMode === "reveal") {
+    revealInPlay(coord, cell);
+  } else {
+    toggleFlagInPlay(cell);
   }
 }
 
 export function handleGridShortPress(padId: number): void {
-  if (isGameOver || isGameWon) {
+  if (isGameFinished()) {
     resetGame();
     return;
   }
 
-  const r = Math.floor(padId / 10) - 1;
-  const c = (padId % 10) - 1;
-  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+  const coord = padToCoord(padId);
+  if (!coord) return;
 
-  if (!isGenerated) {
-    if (playMode === "flag") return; // cannot flag first click
-    generateNoGuessBoard(r, c);
-  }
+  if (!ensureBoardForShortPress(coord)) return;
 
-  const row = board[r];
-  if (!row) return;
-  const cell = row[c];
-  if (!cell) return;
-
-  if (playMode === "reveal") {
-    if (!cell.flagged) {
-      revealCell(r, c);
-      if (!isGameOver && !isGameWon) {
-        drawBoard();
-      }
-    }
-  } else {
-    // Flag Mode
-    if (!cell.revealed) {
-      cell.flagged = !cell.flagged;
-      drawBoard();
-    }
-  }
+  applyShortPressAction(coord);
 }
 
 export function handleGridLongPress(padId: number): void {
-  if (isGameOver || isGameWon) {
+  if (isGameFinished()) {
     resetGame();
     return;
   }
 
-  const r = Math.floor(padId / 10) - 1;
-  const c = (padId % 10) - 1;
-  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+  const coord = padToCoord(padId);
+  if (!coord) return;
 
-  if (!isGenerated) {
-    generateNoGuessBoard(r, c);
-  }
+  if (!isGenerated) generateNoGuessBoard(coord[0], coord[1]);
 
-  const row = board[r];
-  if (!row) return;
-  const cell = row[c];
+  const cell = at(board, coord);
   if (!cell) return;
-
-  if (!cell.revealed) {
-    cell.flagged = !cell.flagged;
-    drawBoard();
-  }
+  toggleFlagInPlay(cell);
 }
 
 export function handleGridPress(padId: number): void {
-  // Simulates a short press for compatibility and tests
   handleGridShortPress(padId);
 }
 
-
 export function togglePlayMode(): void {
   playMode = playMode === "reveal" ? "flag" : "reveal";
-  console.log(`[LogicMinesweeper] Mode toggled to: ${playMode.toUpperCase()}`);
   drawToggleModeButton();
 }
 
@@ -426,29 +425,20 @@ export const logicMinesweeperApp: App = {
   name: "Logic Minesweeper",
 
   init(): void {
-    isCurrentAppActive = true;
     resetGame();
   },
 
-  cleanup(): void {
-    isCurrentAppActive = false;
-  },
-
   onNoteOn(e: NoteMessageEvent): void {
-    const padId = e.note.number;
-    handleGridShortPress(padId);
+    handleGridShortPress(e.note.number);
   },
 
   onNoteOnLongPress(e: NoteMessageEvent): void {
-    const padId = e.note.number;
-    handleGridLongPress(padId);
+    handleGridLongPress(e.note.number);
   },
 
   onControlChange(e: ControlChangeMessageEvent): void {
-    const padId = e.controller.number;
-    const velocity = e.message.data[2] || 0;
-
-    if (velocity > 0 && padId === TOGGLE_BUTTON_PAD) {
+    const velocity = e.message.data[2] ?? 0;
+    if (velocity > 0 && e.controller.number === TOGGLE_BUTTON_PAD) {
       togglePlayMode();
     }
   }

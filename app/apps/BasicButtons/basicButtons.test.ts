@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handlePadPress } from "./basicButtons";
 import * as grid from "../../core/grid";
 
-// Mock the grid module
 vi.mock("../../core/grid", () => ({
   getColor: vi.fn(),
   setRGB: vi.fn(),
@@ -11,7 +10,6 @@ vi.mock("../../core/grid", () => ({
   clearGrid: vi.fn(),
 }));
 
-// Mock the midi module
 vi.mock("../../core/midi", () => ({
   lpInput: {
     removeListener: vi.fn(),
@@ -25,21 +23,18 @@ describe("basicButtons.ts", () => {
   });
 
   it("should turn pad green if it is currently off", () => {
-    // Setup: Pad 11 is off
-    (grid.getColor as any).mockReturnValue(null);
-    
+    vi.mocked(grid.getColor).mockReturnValue(null);
+
     handlePadPress(11, 127);
-    
-    // The current logic in basicButtons uses setRGB for new green pads
-    expect(grid.setRGB).toHaveBeenCalledWith(11, 0, 127, 0);
+
+    expect(grid.setRGB).toHaveBeenCalledWith(11, [0, 127, 0]);
   });
 
   it("should turn pad off if it is currently on", () => {
-    // Setup: Pad 11 is on (some color)
-    (grid.getColor as any).mockReturnValue([0, 127, 0]);
-    
+    vi.mocked(grid.getColor).mockReturnValue([0, 127, 0]);
+
     handlePadPress(11, 127);
-    
-    expect(grid.setRGB).toHaveBeenCalledWith(11, 0, 0, 0);
+
+    expect(grid.setRGB).toHaveBeenCalledWith(11, [0, 0, 0]);
   });
 });

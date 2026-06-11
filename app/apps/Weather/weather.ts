@@ -1,10 +1,10 @@
 import type { App } from "../../types";
-import { setRGB, clearGrid } from "../../core/grid";
+import { setRGB } from "../../core/grid";
 
 const LATITUDE = 53.94;
 const LONGITUDE = 10.31;
-const FETCH_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
-const ANIMATION_TICK_MS = 400; // Speed of weather frame transitions
+const FETCH_INTERVAL_MS = 10 * 60 * 1000;
+const ANIMATION_TICK_MS = 400;
 
 interface WeatherState {
   fetchInterval: NodeJS.Timeout | null;
@@ -20,20 +20,22 @@ const state: WeatherState = {
   animFrame: 0,
 };
 
-// --- COLOR PALETTE (Restricted to 0-127 for Launchpad X) ---
-const YEL = { r: 127, g: 105, b: 0 }; // Sun Yellow
-const DIM_YEL = { r: 60, g: 50, b: 0 }; // Dim Sun Yellow for pulsing
-const BLU = { r: 0, g: 40, b: 127 }; // Rain Blue
-const WHT = { r: 110, g: 110, b: 110 }; // Cloud White / Snow
-const GRY = { r: 35, g: 35, b: 35 }; // Storm Cloud Dark Gray
-const AMB = { r: 127, g: 80, b: 0 }; // Lightning Flash Amber
-const AQU = { r: 0, g: 90, b: 90 }; // Wind / Fog Aqua
-const OFF = { r: 0, g: 0, b: 0 }; // Off/Black Space
+interface PadColor {
+  r: number;
+  g: number;
+  b: number;
+}
 
-// --- ANIMATION FRAMES CONFIGURATION ---
+const YEL: PadColor = { r: 127, g: 105, b: 0 };
+const DIM_YEL: PadColor = { r: 60, g: 50, b: 0 };
+const BLU: PadColor = { r: 0, g: 40, b: 127 };
+const WHT: PadColor = { r: 110, g: 110, b: 110 };
+const GRY: PadColor = { r: 35, g: 35, b: 35 };
+const AMB: PadColor = { r: 127, g: 80, b: 0 };
+const AQU: PadColor = { r: 0, g: 90, b: 90 };
+const OFF: PadColor = { r: 0, g: 0, b: 0 };
 
-const ANIM_SUNNY = [
-  // Frame 0: Extended Rays
+const ANIM_SUNNY: PadColor[][][] = [
   [
     [OFF, OFF, OFF, YEL, YEL, OFF, OFF, OFF],
     [OFF, YEL, OFF, YEL, YEL, OFF, YEL, OFF],
@@ -44,7 +46,6 @@ const ANIM_SUNNY = [
     [OFF, YEL, OFF, YEL, YEL, OFF, YEL, OFF],
     [OFF, OFF, OFF, YEL, YEL, OFF, OFF, OFF],
   ],
-  // Frame 1: Retracted/Pulsing Rays
   [
     [OFF, OFF, OFF, DIM_YEL, DIM_YEL, OFF, OFF, OFF],
     [OFF, DIM_YEL, OFF, YEL, YEL, OFF, DIM_YEL, OFF],
@@ -57,8 +58,7 @@ const ANIM_SUNNY = [
   ],
 ];
 
-const ANIM_RAINY = [
-  // Frame 0: Rain droplets high
+const ANIM_RAINY: PadColor[][][] = [
   [
     [OFF, OFF, GRY, GRY, GRY, GRY, OFF, OFF],
     [OFF, GRY, GRY, GRY, GRY, GRY, GRY, OFF],
@@ -69,7 +69,6 @@ const ANIM_RAINY = [
     [BLU, OFF, BLU, OFF, BLU, OFF, BLU, OFF],
     [OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF],
   ],
-  // Frame 1: Rain droplets falling lower
   [
     [OFF, OFF, GRY, GRY, GRY, GRY, OFF, OFF],
     [OFF, GRY, GRY, GRY, GRY, GRY, GRY, OFF],
@@ -82,8 +81,7 @@ const ANIM_RAINY = [
   ],
 ];
 
-const ANIM_THUNDER = [
-  // Frame 0: Storm cloud charging
+const ANIM_THUNDER: PadColor[][][] = [
   [
     [OFF, OFF, GRY, GRY, GRY, GRY, OFF, OFF],
     [OFF, GRY, GRY, GRY, GRY, GRY, GRY, OFF],
@@ -94,7 +92,6 @@ const ANIM_THUNDER = [
     [OFF, OFF, OFF, OFF, OFF, BLU, OFF, OFF],
     [OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF],
   ],
-  // Frame 1: Bolt strikes down
   [
     [OFF, OFF, GRY, GRY, GRY, GRY, OFF, OFF],
     [OFF, GRY, GRY, GRY, GRY, GRY, GRY, OFF],
@@ -107,8 +104,7 @@ const ANIM_THUNDER = [
   ],
 ];
 
-const ANIM_WINDY = [
-  // Frame 0: Gusts moving left
+const ANIM_WINDY: PadColor[][][] = [
   [
     [OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF],
     [OFF, AQU, AQU, AQU, AQU, AQU, OFF, OFF],
@@ -119,7 +115,6 @@ const ANIM_WINDY = [
     [OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF],
     [OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF],
   ],
-  // Frame 1: Gusts shifted right
   [
     [OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF],
     [OFF, OFF, AQU, AQU, AQU, AQU, AQU, OFF],
@@ -132,8 +127,7 @@ const ANIM_WINDY = [
   ],
 ];
 
-// Fallback arrays for stationary layouts (wrapping single-frame maps inside an array)
-const ANIM_CLOUDY = [
+const ANIM_CLOUDY: PadColor[][][] = [
   [
     [OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF],
     [OFF, OFF, OFF, WHT, WHT, OFF, OFF, OFF],
@@ -146,7 +140,7 @@ const ANIM_CLOUDY = [
   ],
 ];
 
-const ANIM_FOGGY = [
+const ANIM_FOGGY: PadColor[][][] = [
   [
     [OFF, OFF, OFF, OFF, OFF, OFF, OFF, OFF],
     [AQU, AQU, AQU, AQU, AQU, AQU, AQU, AQU],
@@ -159,33 +153,50 @@ const ANIM_FOGGY = [
   ],
 ];
 
-function getActiveAnimationSet(wmoCode: number): typeof ANIM_SUNNY {
-  if (wmoCode === 0 || wmoCode === 1) return ANIM_SUNNY;
-  if (wmoCode === 2 || wmoCode === 3) return ANIM_CLOUDY;
-  if (wmoCode === 45 || wmoCode === 48) return ANIM_FOGGY;
-  if (wmoCode >= 51 && wmoCode <= 67) return ANIM_RAINY;
-  if (wmoCode >= 71 && wmoCode <= 86) return ANIM_RAINY; // Re-use rainy drop cycle vectors for snow speed drops
-  if (wmoCode >= 95 && wmoCode <= 99) return ANIM_THUNDER;
-  return ANIM_WINDY;
+interface WmoCodeRange {
+  min: number;
+  max: number;
+  frames: PadColor[][][];
+}
+
+const WMO_CODE_ANIMATIONS: WmoCodeRange[] = [
+  { min: 0, max: 1, frames: ANIM_SUNNY },
+  { min: 2, max: 3, frames: ANIM_CLOUDY },
+  { min: 45, max: 45, frames: ANIM_FOGGY },
+  { min: 48, max: 48, frames: ANIM_FOGGY },
+  { min: 51, max: 67, frames: ANIM_RAINY },
+  { min: 71, max: 86, frames: ANIM_RAINY },
+  { min: 95, max: 99, frames: ANIM_THUNDER },
+];
+
+function getActiveAnimationSet(wmoCode: number): PadColor[][][] {
+  const match = WMO_CODE_ANIMATIONS.find(
+    (range) => wmoCode >= range.min && wmoCode <= range.max
+  );
+  return match?.frames ?? ANIM_WINDY;
+}
+
+function paintRow(row: PadColor[], rowIndex: number): void {
+  row.forEach((color, colIndex) => {
+    const padId = (8 - rowIndex) * 10 + (colIndex + 1);
+    setRGB(padId, [color.r, color.g, color.b]);
+  });
 }
 
 function renderAnimationFrame(): void {
   const currentSet = getActiveAnimationSet(state.currentCode);
-
-  // Clean loop over frames safely using length limits
   const frameIndex = state.animFrame % currentSet.length;
   const currentMatrix = currentSet[frameIndex];
 
-  //clearGrid();
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const color = currentMatrix[r][c];
-      const padId = (8 - r) * 10 + (c + 1);
-      setRGB(padId, color.r, color.g, color.b);
-    }
-  }
+  currentMatrix?.forEach(paintRow);
 
   state.animFrame++;
+}
+
+interface WeatherApiResponse {
+  current_weather?: {
+    weathercode?: number;
+  };
 }
 
 async function fetchLiveWeather(): Promise<void> {
@@ -193,9 +204,10 @@ async function fetchLiveWeather(): Promise<void> {
     const response = await fetch(
       `https://api.open-meteo.com/v1/forecast?latitude=${LATITUDE}&longitude=${LONGITUDE}&current_weather=true`
     );
-    const data = await response.json();
-    if (data?.current_weather?.weathercode !== undefined) {
-      state.currentCode = data.current_weather.weathercode;
+    const data = (await response.json()) as WeatherApiResponse;
+    const weathercode = data.current_weather?.weathercode;
+    if (weathercode !== undefined) {
+      state.currentCode = weathercode;
     }
   } catch (error) {
     console.error("Failed fetching animation telemetry matrices:", error);
@@ -208,11 +220,9 @@ export const weatherStation: App = {
   init(): void {
     state.animFrame = 0;
 
-    // Initial fetch, then pull fresh data every 10 minutes
-    fetchLiveWeather();
+    void fetchLiveWeather();
     state.fetchInterval = setInterval(fetchLiveWeather, FETCH_INTERVAL_MS);
 
-    // Drive the 8x8 matrix display ticks locally via separate game-loop timing configurations
     state.animInterval = setInterval(renderAnimationFrame, ANIMATION_TICK_MS);
   },
 

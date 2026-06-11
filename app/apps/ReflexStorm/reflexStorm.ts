@@ -1,27 +1,44 @@
 import type { App } from "../../types";
+import type { RGB } from "../../types";
 import type { NoteMessageEvent, ControlChangeMessageEvent } from "webmidi";
-import { setRGB, setRGBFlashing, clearGrid } from "../../core/grid";
+import { setRGB, setRGBFlashing } from "../../core/grid";
 
-// Colors (Restricted to 0-127 for Launchpad X)
-const COLOR_TARGET = { r: 0, g: 127, b: 64 }; // Teal/Cyan Target
-const COLOR_FAIL_RING = { r: 127, g: 0, b: 0 }; // Flashing Red ring on loss
-const COLOR_BACKGROUND = { r: 5, g: 5, b: 5 }; // Ultra-dim white background for orientation
+const TARGET_COLOR: RGB = [0, 127, 64];
+const FAIL_RING_COLOR: RGB = [127, 0, 0];
+const BACKGROUND_COLOR: RGB = [5, 5, 5];
+const HIT_FLASH_COLOR: RGB = [0, 127, 0];
+const FAIL_RING_FLASH_DURATION_MS = 250;
+const INITIAL_LIFESPAN_MS = 1500;
+const INITIAL_INTERVAL_MS = 800;
+const MIN_LIFESPAN_MS = 300;
+const LIFESPAN_STEP_MS = 45;
+const MIN_INTERVAL_MS = 150;
+const INTERVAL_STEP_MS = 30;
+const SINGLE_PAD_PHASE_SCORE = 100;
 
 interface GameState {
   score: number;
-  currentPads: number[]; // Array of Pad IDs making up the current active target
+  currentPads: number[];
   hasHitCurrentTarget: boolean;
   isGameOver: boolean;
   allFingersCleared: boolean;
   hasStarted: boolean;
-
-  // Game Loop Timers
   spawnTimer: NodeJS.Timeout | null;
   lifespanTimer: NodeJS.Timeout | null;
+  currentLifespanMs: number;
+  currentIntervalMs: number;
+}
 
-  // Dynamic Difficulty Parameters
-  currentLifespanMs: number; // How long the target stays lit
-  currentIntervalMs: number; // Delay before the next target spawns
+interface RingBounds {
+  minRow: number;
+  maxRow: number;
+  minCol: number;
+  maxCol: number;
+}
+
+interface Cell {
+  row: number;
+  col: number;
 }
 
 const state: GameState = {
@@ -33,85 +50,112 @@ const state: GameState = {
   hasStarted: false,
   spawnTimer: null,
   lifespanTimer: null,
-  currentLifespanMs: 1500, // Start casual
-  currentIntervalMs: 800,
+  currentLifespanMs: INITIAL_LIFESPAN_MS,
+  currentIntervalMs: INITIAL_INTERVAL_MS,
 };
 
 function renderBackground(): void {
-  // Give a faint ambient glow so the player can see the grid boundaries in the dark
-  for (let r = 1; r <= 8; r++) {
-    for (let c = 1; c <= 8; c++) {
-      setRGB(
-        r * 10 + c,
-        COLOR_BACKGROUND.r,
-        COLOR_BACKGROUND.g,
-        COLOR_BACKGROUND.b
-      );
+  for (let row = 1; row <= 8; row++) {
+    for (let col = 1; col <= 8; col++) {
+      setRGB(row * 10 + col, BACKGROUND_COLOR);
     }
   }
 }
 
 function generateTargetCluster(score: number): number[] {
-  const pads: number[] = [];
-
-  // Phase 1 (Score 0-9): Large 2x2 blocks of 4 pads
-  // Phase 2 (Score 10+): Precise single pads
-  if (score < 100) {
-    // Pick a random anchor row/col from 1-7 so the 2x2 block fits safely inside 1-8
+  if (score < SINGLE_PAD_PHASE_SCORE) {
     const baseRow = Math.floor(Math.random() * 7) + 1;
     const baseCol = Math.floor(Math.random() * 7) + 1;
-
-    pads.push(baseRow * 10 + baseCol);
-    pads.push(baseRow * 10 + (baseCol + 1));
-    pads.push((baseRow + 1) * 10 + baseCol);
-    pads.push((baseRow + 1) * 10 + (baseCol + 1));
-  } else {
-    const row = Math.floor(Math.random() * 8) + 1;
-    const col = Math.floor(Math.random() * 8) + 1;
-    pads.push(row * 10 + col);
+    return [
+      baseRow * 10 + baseCol,
+      baseRow * 10 + (baseCol + 1),
+      (baseRow + 1) * 10 + baseCol,
+      (baseRow + 1) * 10 + (baseCol + 1),
+    ];
   }
 
-  return pads;
+  const row = Math.floor(Math.random() * 8) + 1;
+  const col = Math.floor(Math.random() * 8) + 1;
+  return [row * 10 + col];
+}
+
+function lightTargetPads(): void {
+  state.currentPads.forEach((padId) => {
+    setRGB(padId, TARGET_COLOR);
+  });
+}
+
+function clearGameTimers(): void {
+  if (state.spawnTimer) clearTimeout(state.spawnTimer);
+  if (state.lifespanTimer) clearTimeout(state.lifespanTimer);
+}
+
+function computeRingBounds(pads: number[]): RingBounds {
+  const rows = pads.map((padId) => Math.floor(padId / 10));
+  const cols = pads.map((padId) => padId % 10);
+  return {
+    minRow: Math.min(...rows),
+    maxRow: Math.max(...rows),
+    minCol: Math.min(...cols),
+    maxCol: Math.max(...cols),
+  };
+}
+
+function isInsideBounds(cell: Cell, bounds: RingBounds): boolean {
+  const rowInside = cell.row >= bounds.minRow && cell.row <= bounds.maxRow;
+  const colInside = cell.col >= bounds.minCol && cell.col <= bounds.maxCol;
+  return rowInside && colInside;
+}
+
+function isOnGrid(cell: Cell): boolean {
+  const rowOnGrid = cell.row >= 1 && cell.row <= 8;
+  const colOnGrid = cell.col >= 1 && cell.col <= 8;
+  return rowOnGrid && colOnGrid;
+}
+
+function flashRingCell(cell: Cell, bounds: RingBounds): void {
+  if (isInsideBounds(cell, bounds)) return;
+  if (!isOnGrid(cell)) return;
+  setRGBFlashing(cell.row * 10 + cell.col, {
+    rgb: FAIL_RING_COLOR,
+    duration: FAIL_RING_FLASH_DURATION_MS,
+  });
+}
+
+function drawFailRing(bounds: RingBounds): void {
+  for (let row = bounds.minRow - 1; row <= bounds.maxRow + 1; row++) {
+    for (let col = bounds.minCol - 1; col <= bounds.maxCol + 1; col++) {
+      flashRingCell({ row, col }, bounds);
+    }
+  }
 }
 
 function triggerGameOver(failedPadId: number): void {
   state.isGameOver = true;
   state.allFingersCleared = false;
+  clearGameTimers();
 
-  if (state.spawnTimer) clearTimeout(state.spawnTimer);
-  if (state.lifespanTimer) clearTimeout(state.lifespanTimer);
+  const padsToRing =
+    state.currentPads.length > 0 ? state.currentPads : [failedPadId];
+  drawFailRing(computeRingBounds(padsToRing));
+}
 
-  // Leave everything dim, but turn the failed target ring flashing red
-  // We surround the active target block (currentPads) with red flashing.
-  const padsToRing = state.currentPads.length > 0 ? state.currentPads : [failedPadId];
-  let minRow = 9, maxRow = 0, minCol = 9, maxCol = 0;
-
-  for (const padId of padsToRing) {
-    const r = Math.floor(padId / 10);
-    const c = padId % 10;
-    if (r < minRow) minRow = r;
-    if (r > maxRow) maxRow = r;
-    if (c < minCol) minCol = c;
-    if (c > maxCol) maxCol = c;
+function handleLifespanExpired(): void {
+  if (!state.hasHitCurrentTarget) {
+    triggerGameOver(state.currentPads[0] ?? 0);
+    return;
   }
 
-  for (let r = minRow - 1; r <= maxRow + 1; r++) {
-    for (let c = minCol - 1; c <= maxCol + 1; c++) {
-      // Skip the cells that are part of the target itself
-      if (r >= minRow && r <= maxRow && c >= minCol && c <= maxCol) {
-        continue;
-      }
-      if (r >= 1 && r <= 8 && c >= 1 && c <= 8) {
-        setRGBFlashing(
-          r * 10 + c,
-          COLOR_FAIL_RING.r,
-          COLOR_FAIL_RING.g,
-          COLOR_FAIL_RING.b,
-          250
-        );
-      }
-    }
-  }
+  renderBackground();
+  state.currentLifespanMs = Math.max(
+    MIN_LIFESPAN_MS,
+    state.currentLifespanMs - LIFESPAN_STEP_MS
+  );
+  state.currentIntervalMs = Math.max(
+    MIN_INTERVAL_MS,
+    state.currentIntervalMs - INTERVAL_STEP_MS
+  );
+  state.spawnTimer = setTimeout(spawnTarget, state.currentIntervalMs);
 }
 
 function spawnTarget(): void {
@@ -121,28 +165,44 @@ function spawnTarget(): void {
 
   state.currentPads = generateTargetCluster(state.score);
   state.hasHitCurrentTarget = false;
+  lightTargetPads();
 
-  // Light up the target cluster
+  state.lifespanTimer = setTimeout(handleLifespanExpired, state.currentLifespanMs);
+}
+
+function registerHit(): void {
+  state.hasHitCurrentTarget = true;
+  state.score++;
   state.currentPads.forEach((padId) => {
-    setRGB(padId, COLOR_TARGET.r, COLOR_TARGET.g, COLOR_TARGET.b);
+    setRGB(padId, HIT_FLASH_COLOR);
   });
+}
 
-  // Start the ticking lifespan window for this target
-  state.lifespanTimer = setTimeout(() => {
-    if (!state.hasHitCurrentTarget) {
-      // Player was too slow! Punish them using the first pad of the cluster as the epicenter
-      triggerGameOver(state.currentPads[0]);
-    } else {
-      // Clean up target visually, then prepare the next cycle
-      renderBackground();
+function handleFirstPress(padId: number): void {
+  if (state.currentPads.includes(padId)) {
+    state.hasStarted = true;
+    registerHit();
+    state.spawnTimer = setTimeout(spawnTarget, state.currentIntervalMs);
+    return;
+  }
+  triggerGameOver(padId);
+}
 
-      // Step up difficulty curve exponentially over time
-      state.currentLifespanMs = Math.max(300, state.currentLifespanMs - 45);
-      state.currentIntervalMs = Math.max(150, state.currentIntervalMs - 30);
+function handleRunningPress(padId: number): void {
+  if (!state.currentPads.includes(padId)) {
+    triggerGameOver(padId);
+    return;
+  }
+  if (!state.hasHitCurrentTarget) {
+    registerHit();
+  }
+}
 
-      state.spawnTimer = setTimeout(spawnTarget, state.currentIntervalMs);
-    }
-  }, state.currentLifespanMs);
+function resolveVelocity(e: ControlChangeMessageEvent): number {
+  if (e.value === undefined) {
+    return e.message.data[2] || 0;
+  }
+  return Number(e.value);
 }
 
 export const reflexStorm: App = {
@@ -154,21 +214,17 @@ export const reflexStorm: App = {
     state.allFingersCleared = true;
     state.hasStarted = false;
     state.hasHitCurrentTarget = false;
-    state.currentLifespanMs = 1500;
-    state.currentIntervalMs = 800;
+    state.currentLifespanMs = INITIAL_LIFESPAN_MS;
+    state.currentIntervalMs = INITIAL_INTERVAL_MS;
 
     renderBackground();
 
-    // Generate and display the first challenge target, but don't start the timer yet
     state.currentPads = generateTargetCluster(0);
-    state.currentPads.forEach((padId) => {
-      setRGB(padId, COLOR_TARGET.r, COLOR_TARGET.g, COLOR_TARGET.b);
-    });
+    lightTargetPads();
   },
 
   cleanup(): void {
-    if (state.spawnTimer) clearTimeout(state.spawnTimer);
-    if (state.lifespanTimer) clearTimeout(state.lifespanTimer);
+    clearGameTimers();
   },
 
   onNoteOn(e: NoteMessageEvent): void {
@@ -181,50 +237,22 @@ export const reflexStorm: App = {
       return;
     }
 
-    // Set tracker flags upon active game input
     state.allFingersCleared = false;
 
     if (!state.hasStarted) {
-      if (state.currentPads.includes(padId)) {
-        state.hasStarted = true;
-        state.hasHitCurrentTarget = true;
-        state.score++;
-
-        // Flash target instantly to give satisfying optical hit acknowledgment
-        state.currentPads.forEach((p) => setRGB(p, 0, 127, 0));
-
-        // Start the next spawn timer
-        state.spawnTimer = setTimeout(spawnTarget, state.currentIntervalMs);
-      } else {
-        // Misclicking an empty pad is an immediate reflex disqualification!
-        triggerGameOver(padId);
-      }
+      handleFirstPress(padId);
       return;
     }
 
-    // Check if user hit any valid coordinate component of our active target
-    if (state.currentPads.includes(padId) && !state.hasHitCurrentTarget) {
-      state.hasHitCurrentTarget = true;
-      state.score++;
-
-      // Flash target instantly to give satisfying optical hit acknowledgment
-      state.currentPads.forEach((p) => setRGB(p, 0, 127, 0));
-    } else if (!state.currentPads.includes(padId)) {
-      // Misclicking an empty pad is an immediate reflex disqualification!
-      triggerGameOver(padId);
-    }
+    handleRunningPress(padId);
   },
 
   onNoteOff(): void {
-    // Since we don't have global state loops polling physical hardware note state indexes,
-    // we assume safe clearance happens when players completely back off.
-    // For single-player reflex scenarios, WebMIDI note-off signals no hands are touching.
     state.allFingersCleared = true;
   },
 
   onControlChange(e: ControlChangeMessageEvent): void {
-    const velocity = e.value !== undefined ? e.value : (e.message.data[2] || 0);
-    if (state.isGameOver && state.allFingersCleared && velocity > 0) {
+    if (state.isGameOver && state.allFingersCleared && resolveVelocity(e) > 0) {
       this.init();
     }
   },

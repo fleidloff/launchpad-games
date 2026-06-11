@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { Mock } from "vitest";
 import { AppManager } from "./appManager";
 import * as grid from "./grid";
 import * as midi from "./midi";
 import type { App } from "../types";
+import type { NoteMessageEvent, ControlChangeMessageEvent } from "webmidi";
 
 vi.mock("./grid", () => ({
   enterProgrammerMode: vi.fn(),
@@ -23,20 +25,35 @@ vi.mock("./midi", () => {
   };
 });
 
+type ListenerCallback = (e: unknown) => void;
+
+function makeNoteEvent(number: number, rawAttack: number): NoteMessageEvent {
+  return { note: { number, rawAttack } } as unknown as NoteMessageEvent;
+}
+
+function makeCcEvent(number: number, velocity: number): ControlChangeMessageEvent {
+  return {
+    controller: { number },
+    message: { data: [0xb0, number, velocity] },
+  } as unknown as ControlChangeMessageEvent;
+}
+
 describe("AppManager", () => {
   let manager: AppManager;
   let mockApp1: App;
   let mockApp2: App;
-  let listeners: Record<string, Function>;
+  let listeners: Record<string, ListenerCallback>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
 
     listeners = {};
-    (midi.lpInput!.addListener as any).mockImplementation((event: string, callback: Function) => {
-      listeners[event] = callback;
-    });
+    (midi.lpInput!.addListener as unknown as Mock).mockImplementation(
+      (event: string, callback: ListenerCallback) => {
+        listeners[event] = callback;
+      }
+    );
 
     mockApp1 = {
       name: "Mock App 1",
@@ -69,7 +86,7 @@ describe("AppManager", () => {
     manager.init();
 
     expect(midi.lpInput!.removeListener).toHaveBeenCalled();
-    expect(midi.lpInput!.addListener).toHaveBeenCalledTimes(3); // noteon, noteoff, controlchange
+    expect(midi.lpInput!.addListener).toHaveBeenCalledTimes(3);
     expect(grid.enterProgrammerMode).toHaveBeenCalled();
     expect(grid.clearGrid).toHaveBeenCalled();
     expect(mockApp1.init).toHaveBeenCalled();
@@ -85,7 +102,7 @@ describe("AppManager", () => {
     expect(noteonCallback).toBeDefined();
     expect(noteoffCallback).toBeDefined();
 
-    const mockEvent = { note: { number: 11, rawAttack: 127 } } as any;
+    const mockEvent = makeNoteEvent(11, 127);
     noteonCallback!(mockEvent);
     expect(mockApp1.onNoteOn).toHaveBeenCalledWith(mockEvent);
 
@@ -99,7 +116,7 @@ describe("AppManager", () => {
     const ccCallback = listeners["controlchange"];
     expect(ccCallback).toBeDefined();
 
-    const mockEvent = { controller: { number: 91 }, message: { data: [0xb0, 91, 127] } } as any;
+    const mockEvent = makeCcEvent(91, 127);
     ccCallback!(mockEvent);
     expect(mockApp1.onControlChange).toHaveBeenCalledWith(mockEvent);
   });
@@ -108,13 +125,15 @@ describe("AppManager", () => {
     manager.init();
 
     const ccCallback = listeners["controlchange"];
-    const pressEvent = { controller: { number: 79 }, message: { data: [0xb0, 79, 127] } } as any;
+    const pressEvent = makeCcEvent(79, 127);
 
     ccCallback!(pressEvent);
 
-    // App should not have switched yet
     expect(manager.getActiveApp()).toBe(mockApp1);
-    expect(grid.setMenuRGBFlashing).toHaveBeenCalledWith(79, 127, 0, 0, 300);
+    expect(grid.setMenuRGBFlashing).toHaveBeenCalledWith(79, {
+      rgb: [127, 0, 0],
+      duration: 300,
+    });
     expect(mockApp2.init).not.toHaveBeenCalled();
   });
 
@@ -122,15 +141,14 @@ describe("AppManager", () => {
     manager.init();
 
     const ccCallback = listeners["controlchange"];
-    const pressEvent = { controller: { number: 79 }, message: { data: [0xb0, 79, 127] } } as any;
+    const pressEvent = makeCcEvent(79, 127);
 
     ccCallback!(pressEvent);
 
-    // Advance time by 2 seconds
     vi.advanceTimersByTime(2000);
 
     expect(mockApp1.cleanup).toHaveBeenCalled();
-    expect(grid.clearGrid).toHaveBeenCalledTimes(2); // Initial boot + switchApp clear
+    expect(grid.clearGrid).toHaveBeenCalledTimes(2);
     expect(mockApp2.init).toHaveBeenCalled();
     expect(manager.getActiveApp()).toBe(mockApp2);
   });
@@ -139,29 +157,23 @@ describe("AppManager", () => {
     manager.init();
 
     const ccCallback = listeners["controlchange"];
-    const pressEvent = { controller: { number: 79 }, message: { data: [0xb0, 79, 127] } } as any;
-    const releaseEvent = { controller: { number: 79 }, message: { data: [0xb0, 79, 0] } } as any;
+    const pressEvent = makeCcEvent(79, 127);
+    const releaseEvent = makeCcEvent(79, 0);
 
-    // Press down
     ccCallback!(pressEvent);
 
-    // Advance 1 second
     vi.advanceTimersByTime(1000);
 
-    // Release early
     ccCallback!(releaseEvent);
 
-    // Advance another 1.5 seconds (total 2.5 seconds from press)
     vi.advanceTimersByTime(1500);
 
-    // App should not have switched
     expect(manager.getActiveApp()).toBe(mockApp1);
     expect(mockApp2.init).not.toHaveBeenCalled();
-    expect(grid.setMenuRGB).toHaveBeenCalledWith(79, 20, 20, 20); // Restored inactive color
+    expect(grid.setMenuRGB).toHaveBeenCalledWith(79, [20, 20, 20]);
   });
 
   it("should trigger onNoteOnLongPress and onControlChangeLongPress if buttons are held", () => {
-    // Let's define long press handlers on a mock app
     const longPressApp: App = {
       name: "Long Press App",
       init: vi.fn(),
@@ -185,39 +197,32 @@ describe("AppManager", () => {
     expect(noteoffCallback).toBeDefined();
     expect(ccCallback).toBeDefined();
 
-    // 1. Test Note Long Press
-    const mockNoteEvent = { note: { number: 12, rawAttack: 127 } } as any;
+    const mockNoteEvent = makeNoteEvent(12, 127);
     noteonCallback!(mockNoteEvent);
 
-    // Fast-forward 200ms: should not trigger long press yet
     vi.advanceTimersByTime(200);
     expect(longPressApp.onNoteOnLongPress).not.toHaveBeenCalled();
     expect(longPressApp.onNoteOn).not.toHaveBeenCalled();
 
-    // Fast-forward another 200ms (total 400ms): should trigger long press
     vi.advanceTimersByTime(200);
     expect(longPressApp.onNoteOnLongPress).toHaveBeenCalledWith(mockNoteEvent);
     expect(longPressApp.onNoteOn).not.toHaveBeenCalled();
 
-    // Release (NoteOff): should not trigger short press (onNoteOn)
-    const mockNoteOffEvent = { note: { number: 12, rawAttack: 0 } } as any;
+    const mockNoteOffEvent = makeNoteEvent(12, 0);
     noteoffCallback!(mockNoteOffEvent);
     expect(longPressApp.onNoteOn).not.toHaveBeenCalled();
     expect(longPressApp.onNoteOff).toHaveBeenCalledWith(mockNoteOffEvent);
 
-    // 2. Test Note Short Press
     vi.clearAllMocks();
     noteonCallback!(mockNoteEvent);
     vi.advanceTimersByTime(200);
     noteoffCallback!(mockNoteOffEvent);
 
-    // Should trigger short press (onNoteOn) on release
     expect(longPressApp.onNoteOn).toHaveBeenCalledWith(mockNoteEvent);
     expect(longPressApp.onNoteOnLongPress).not.toHaveBeenCalled();
     expect(longPressApp.onNoteOff).toHaveBeenCalledWith(mockNoteOffEvent);
 
-    // 3. Test CC Long Press
-    const mockCCPressEvent = { controller: { number: 92 }, message: { data: [0xb0, 92, 127] } } as any;
+    const mockCCPressEvent = makeCcEvent(92, 127);
     ccCallback!(mockCCPressEvent);
 
     vi.advanceTimersByTime(200);
@@ -227,12 +232,10 @@ describe("AppManager", () => {
     expect(longPressApp.onControlChangeLongPress).toHaveBeenCalledWith(mockCCPressEvent);
     expect(longPressApp.onControlChange).not.toHaveBeenCalled();
 
-    // CC release
-    const mockCCReleaseEvent = { controller: { number: 92 }, message: { data: [0xb0, 92, 0] } } as any;
+    const mockCCReleaseEvent = makeCcEvent(92, 0);
     ccCallback!(mockCCReleaseEvent);
     expect(longPressApp.onControlChange).not.toHaveBeenCalled();
 
-    // 4. Test CC Short Press
     vi.clearAllMocks();
     ccCallback!(mockCCPressEvent);
     vi.advanceTimersByTime(200);

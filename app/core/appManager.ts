@@ -8,14 +8,23 @@ import {
 import type { App } from "../types";
 import type { NoteMessageEvent, ControlChangeMessageEvent } from "webmidi";
 
+type TimerId = ReturnType<typeof setTimeout>;
+
+const LONG_PRESS_MS = 400;
+const MENU_HOLD_MS = 1500;
+const MENU_HOLD_FLASH_DURATION = 300;
+const ACTIVE_MENU_COLOR: [number, number, number] = [0, 127, 0];
+const INACTIVE_MENU_COLOR: [number, number, number] = [20, 20, 20];
+const OFF_COLOR: [number, number, number] = [0, 0, 0];
+
 export class AppManager {
   private apps: Map<number, App> = new Map();
   private activeApp: App | null = null;
   private activePadId: number | null = null;
-  private holdTimers: Map<number, any> = new Map();
-  private notePressTimers: Map<number, { timer: any; event: NoteMessageEvent }> = new Map();
+  private holdTimers: Map<number, TimerId> = new Map();
+  private notePressTimers: Map<number, { timer: TimerId; event: NoteMessageEvent }> = new Map();
   private noteLongPressed: Set<number> = new Set();
-  private ccPressTimers: Map<number, { timer: any; event: ControlChangeMessageEvent }> = new Map();
+  private ccPressTimers: Map<number, { timer: TimerId; event: ControlChangeMessageEvent }> = new Map();
   private ccLongPressed: Set<number> = new Set();
 
   registerApp(padId: number, app: App): void {
@@ -28,12 +37,10 @@ export class AppManager {
     enterProgrammerMode();
     lpInput.removeListener();
 
-    // Register global event listeners
     lpInput.addListener("noteon", (e) => this.handleNoteOn(e));
     lpInput.addListener("noteoff", (e) => this.handleNoteOff(e));
     lpInput.addListener("controlchange", (e) => this.handleControlChange(e));
 
-    // Launch default app (first registered)
     const firstPad = Array.from(this.apps.keys())[0];
     if (firstPad) {
       this.switchApp(firstPad);
@@ -44,28 +51,21 @@ export class AppManager {
     const nextApp = this.apps.get(padId);
     if (!nextApp) return;
 
-    console.log(`[AppManager] Switching to app: ${nextApp.name}`);
-
-    // Clear long press timers
     this.clearLongPressTimers();
 
-    // 1. Clean up old app
     if (this.activeApp?.cleanup) {
       this.activeApp.cleanup();
     }
 
-    // 2. Setup new active state
     this.activeApp = nextApp;
     this.activePadId = padId;
 
-    // 3. Reset grid & draw current app
     clearGrid();
     this.drawMenuButtons();
     this.activeApp.init();
   }
 
   private drawMenuButtons(): void {
-    // Redraw menu buttons (19-89)
     for (let r = 1; r <= 8; r++) {
       const padId = r * 10 + 9;
       this.drawMenuButton(padId);
@@ -76,12 +76,12 @@ export class AppManager {
     const app = this.apps.get(padId);
     if (app) {
       if (padId === this.activePadId) {
-        setMenuRGB(padId, 0, 127, 0); // Bright green for active
+        setMenuRGB(padId, ACTIVE_MENU_COLOR);
       } else {
-        setMenuRGB(padId, 20, 20, 20); // Dim gray for inactive/available
+        setMenuRGB(padId, INACTIVE_MENU_COLOR);
       }
     } else {
-      setMenuRGB(padId, 0, 0, 0); // Off
+      setMenuRGB(padId, OFF_COLOR);
     }
   }
 
@@ -108,113 +108,149 @@ export class AppManager {
   }
 
   private handleNoteOn(e: NoteMessageEvent): void {
-    const padId = e.note.number;
-    const velocity = e.note.rawAttack;
+    const app = this.activeApp;
+    if (!app || e.note.rawAttack <= 0) return;
 
-    if (velocity > 0) {
-      if (this.activeApp?.onNoteOnLongPress) {
-        if (this.notePressTimers.has(padId)) {
-          clearTimeout(this.notePressTimers.get(padId)!.timer);
-        }
-        this.noteLongPressed.delete(padId);
-
-        const timer = setTimeout(() => {
-          this.notePressTimers.delete(padId);
-          this.noteLongPressed.add(padId);
-          this.handleNoteOnLongPress(e);
-        }, 400); // 400ms threshold
-
-        this.notePressTimers.set(padId, { timer, event: e });
-      } else {
-        this.activeApp?.onNoteOn?.(e);
-      }
+    if (app.onNoteOnLongPress) {
+      this.startNotePressTimer(e);
+    } else {
+      app.onNoteOn?.(e);
     }
   }
 
-  private handleNoteOff(e: NoteMessageEvent): void {
+  private startNotePressTimer(e: NoteMessageEvent): void {
     const padId = e.note.number;
 
-    if (this.activeApp?.onNoteOnLongPress) {
-      const entry = this.notePressTimers.get(padId);
-      if (entry) {
-        clearTimeout(entry.timer);
-        this.notePressTimers.delete(padId);
-        this.activeApp?.onNoteOn?.(entry.event); // Trigger short press (represented as onNoteOn) with original NoteOn event
-      } else if (this.noteLongPressed.has(padId)) {
-        this.noteLongPressed.delete(padId);
-      }
-      this.activeApp?.onNoteOff?.(e);
-    } else {
-      this.activeApp?.onNoteOff?.(e);
+    const existing = this.notePressTimers.get(padId);
+    if (existing) {
+      clearTimeout(existing.timer);
     }
+    this.noteLongPressed.delete(padId);
+
+    const timer = setTimeout(() => {
+      this.notePressTimers.delete(padId);
+      this.noteLongPressed.add(padId);
+      this.handleNoteOnLongPress(e);
+    }, LONG_PRESS_MS);
+
+    this.notePressTimers.set(padId, { timer, event: e });
+  }
+
+  private handleNoteOff(e: NoteMessageEvent): void {
+    const app = this.activeApp;
+    if (!app) return;
+
+    if (app.onNoteOnLongPress) {
+      this.resolveNotePress(e.note.number, app);
+    }
+    app.onNoteOff?.(e);
+  }
+
+  private resolveNotePress(padId: number, app: App): void {
+    const entry = this.notePressTimers.get(padId);
+    if (entry) {
+      clearTimeout(entry.timer);
+      this.notePressTimers.delete(padId);
+      app.onNoteOn?.(entry.event);
+    } else if (this.noteLongPressed.has(padId)) {
+      this.noteLongPressed.delete(padId);
+    }
+  }
+
+  private isMenuButton(padId: number): boolean {
+    return padId % 10 === 9 && padId >= 19 && padId <= 89 && this.apps.has(padId);
   }
 
   private handleControlChange(e: ControlChangeMessageEvent): void {
     const padId = e.controller.number;
-    const velocity = e.message.data[2] || 0;
+    const velocity = e.message.data[2] ?? 0;
 
-    const isMenuButton =
-      padId % 10 === 9 && padId >= 19 && padId <= 89 && this.apps.has(padId);
-
-    if (isMenuButton) {
-      if (velocity > 0) {
-        // Start 2-second hold timer
-        if (this.holdTimers.has(padId)) {
-          clearTimeout(this.holdTimers.get(padId));
-        }
-
-        // Visual feedback: Flash the button red rapidly while holding
-        setMenuRGBFlashing(padId, 127, 0, 0, 300);
-
-        const timer = setTimeout(() => {
-          this.holdTimers.delete(padId);
-          this.switchApp(padId);
-        }, 1500);
-
-        this.holdTimers.set(padId, timer);
-      } else {
-        // Button released before 2 seconds: cancel switch
-        if (this.holdTimers.has(padId)) {
-          clearTimeout(this.holdTimers.get(padId));
-          this.holdTimers.delete(padId);
-          // Restore standard menu button color
-          this.drawMenuButton(padId);
-        }
-      }
+    if (this.isMenuButton(padId)) {
+      this.handleMenuButton(padId, velocity);
       return;
     }
 
-    // Forward other CC events
-    if (this.activeApp?.onControlChangeLongPress) {
-      if (velocity > 0) {
-        if (this.ccPressTimers.has(padId)) {
-          clearTimeout(this.ccPressTimers.get(padId)!.timer);
-        }
-        this.ccLongPressed.delete(padId);
+    this.forwardControlChange(e, velocity);
+  }
 
-        const timer = setTimeout(() => {
-          this.ccPressTimers.delete(padId);
-          this.ccLongPressed.add(padId);
-          this.handleControlChangeLongPress(e);
-        }, 400); // 400ms threshold
-
-        this.ccPressTimers.set(padId, { timer, event: e });
-      } else {
-        const entry = this.ccPressTimers.get(padId);
-        if (entry) {
-          clearTimeout(entry.timer);
-          this.ccPressTimers.delete(padId);
-          this.activeApp?.onControlChange?.(entry.event); // Trigger short press using original CC event
-        } else if (this.ccLongPressed.has(padId)) {
-          this.ccLongPressed.delete(padId);
-        }
-      }
+  private handleMenuButton(padId: number, velocity: number): void {
+    if (velocity > 0) {
+      this.startMenuHold(padId);
     } else {
-      this.activeApp?.onControlChange?.(e);
+      this.cancelMenuHold(padId);
     }
   }
 
-  // Helper getters for testing
+  private startMenuHold(padId: number): void {
+    const existing = this.holdTimers.get(padId);
+    if (existing) {
+      clearTimeout(existing);
+    }
+
+    setMenuRGBFlashing(padId, { rgb: [127, 0, 0], duration: MENU_HOLD_FLASH_DURATION });
+
+    const timer = setTimeout(() => {
+      this.holdTimers.delete(padId);
+      this.switchApp(padId);
+    }, MENU_HOLD_MS);
+
+    this.holdTimers.set(padId, timer);
+  }
+
+  private cancelMenuHold(padId: number): void {
+    const timer = this.holdTimers.get(padId);
+    if (timer === undefined) return;
+
+    clearTimeout(timer);
+    this.holdTimers.delete(padId);
+    this.drawMenuButton(padId);
+  }
+
+  private forwardControlChange(e: ControlChangeMessageEvent, velocity: number): void {
+    const app = this.activeApp;
+    if (!app) return;
+
+    if (!app.onControlChangeLongPress) {
+      app.onControlChange?.(e);
+      return;
+    }
+
+    if (velocity > 0) {
+      this.startCcPressTimer(e);
+    } else {
+      this.resolveCcPress(e.controller.number, app);
+    }
+  }
+
+  private startCcPressTimer(e: ControlChangeMessageEvent): void {
+    const padId = e.controller.number;
+
+    const existing = this.ccPressTimers.get(padId);
+    if (existing) {
+      clearTimeout(existing.timer);
+    }
+    this.ccLongPressed.delete(padId);
+
+    const timer = setTimeout(() => {
+      this.ccPressTimers.delete(padId);
+      this.ccLongPressed.add(padId);
+      this.handleControlChangeLongPress(e);
+    }, LONG_PRESS_MS);
+
+    this.ccPressTimers.set(padId, { timer, event: e });
+  }
+
+  private resolveCcPress(padId: number, app: App): void {
+    const entry = this.ccPressTimers.get(padId);
+    if (entry) {
+      clearTimeout(entry.timer);
+      this.ccPressTimers.delete(padId);
+      app.onControlChange?.(entry.event);
+    } else if (this.ccLongPressed.has(padId)) {
+      this.ccLongPressed.delete(padId);
+    }
+  }
+
   getActiveApp(): App | null {
     return this.activeApp;
   }

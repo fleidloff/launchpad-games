@@ -3,18 +3,12 @@ import type { App } from "../../types";
 import type { NoteMessageEvent, ControlChangeMessageEvent } from "webmidi";
 
 export function handlePadPress(padId: number, velocity: number): void {
-  console.log(`[BasicButtons] Pressed pad: ${padId}`);
-
   const currentColor = getColor(padId);
 
   if (currentColor === null) {
-    console.log(`Pad ${padId} was OFF. Turning it Green.`);
-    setRGB(padId, 0, velocity, 0);
+    setRGB(padId, [0, velocity, 0]);
   } else {
-    console.log(
-      `Pad ${padId} was already ON (Color: ${currentColor}). Turning it OFF.`
-    );
-    setRGB(padId, 0, 0, 0);
+    setRGB(padId, [0, 0, 0]);
   }
 }
 
@@ -22,7 +16,7 @@ export const basicButtonsApp: App = {
   name: "Basic Buttons",
 
   init(): void {
-    setRGB(99, 100, 100, 10); // Light up Up arrow to show we are ready
+    setRGB(99, [100, 100, 10]);
   },
 
   onNoteOn(e: NoteMessageEvent): void {

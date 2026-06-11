@@ -5,7 +5,7 @@ export type FlashingState = {
   r: number;
   g: number;
   b: number;
-  duration: number; // Duration of one full cycle in ms
+  duration: number;
   startTime: number;
 };
 
