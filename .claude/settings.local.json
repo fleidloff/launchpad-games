@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vitest *)",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(echo \"app.ts lint exit: $?\")",
+      "Bash(echo \"lint exit: $?\")",
+      "Bash(cat > *)"
+    ]
+  }
+}

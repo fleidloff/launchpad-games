@@ -5,12 +5,14 @@ import { tactileSnakeApp } from "./apps/TactileSnake/tactileSnake";
 import { logicMinesweeperApp } from "./apps/LogicMinesweeper/logicMinesweeper";
 import { fingerTwister } from "./apps/Twister/twister";
 import { reflexStorm } from "./apps/ReflexStorm/reflexStorm";
+import { meowdoku } from "./apps/Meowdoku/meowdoku";
 import { requestWakeLock } from "./util/wakeLock";
 
 void requestWakeLock();
 
 const manager = new AppManager();
 
+manager.registerApp(29, meowdoku);
 manager.registerApp(39, reflexStorm);
 manager.registerApp(49, fingerTwister);
 manager.registerApp(79, fourInARowApp);

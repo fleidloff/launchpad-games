@@ -22,6 +22,7 @@ The project has the following directory layout:
         *   [BasicButtons/](file:///home/fred/dev/launchpad-games/app/apps/BasicButtons) - A simple interactive button tester app.
         *   [FourInARow/](file:///home/fred/dev/launchpad-games/app/apps/FourInARow) - A 2-player Connect Four implementation on the grid.
         *   [TactileSnake/](file:///home/fred/dev/launchpad-games/app/apps/TactileSnake) - Classic Snake game utilizing relative matrix controls.
+        *   [Meowdoku/](file:///home/fred/dev/launchpad-games/app/apps/Meowdoku) - A "find the cats" logic puzzle (Queens/Star-Battle style) on the full 8x8 grid split into 8 colored regions; place one cat per row, per column and per region, with no two cats touching (including diagonally). 3 hearts; rule-breaking placements cost a life.
 
 ---
 
