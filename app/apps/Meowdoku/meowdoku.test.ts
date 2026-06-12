@@ -43,6 +43,34 @@ function distinctRegions(): Set<number> {
   return ids;
 }
 
+const RIGHT_DOWN: Coord[] = [
+  [0, 1],
+  [1, 0],
+];
+
+function colorIndexOf(region: number): number {
+  return meowdoku.colorOf[region] ?? -1;
+}
+
+function similarNeighbor(region: number, coord: Coord): boolean {
+  const other = regionAt(coord);
+  if (other === -1 || other === region) return false;
+  return meowdoku.similarColors(colorIndexOf(region), colorIndexOf(other));
+}
+
+function similarColorsTouch(): boolean {
+  for (const coord of allCells()) {
+    const region = regionAt(coord);
+    const touches = RIGHT_DOWN.some((d) => similarNeighbor(region, [coord[0] + d[0], coord[1] + d[1]]));
+    if (touches) return true;
+  }
+  return false;
+}
+
+function allCells(): Coord[] {
+  return Array.from({ length: N * N }, (_unused, i): Coord => [Math.floor(i / N), i % N]);
+}
+
 describe("meowdoku.ts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -162,6 +190,19 @@ describe("meowdoku.ts", () => {
     expect(meowdoku.showBlocked).toBe(true);
     meowdoku.newGame();
     expect(meowdoku.showBlocked).toBe(false);
+  });
+
+  it("assigns each palette color to exactly one region", () => {
+    const used = new Set(meowdoku.colorOf);
+    expect(used.size).toBe(N);
+    expect([...used].every((index) => index >= 0 && index < N)).toBe(true);
+  });
+
+  it("never lets two touching regions use similar colors", () => {
+    for (let attempt = 0; attempt < 30; attempt++) {
+      meowdoku.newGame();
+      expect(similarColorsTouch()).toBe(false);
+    }
   });
 
   function firstCellOfRegion(target: number): Coord {

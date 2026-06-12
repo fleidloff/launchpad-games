@@ -12,6 +12,12 @@ type Constraints = {
   prevCol: number;
 };
 type Search = Constraints & { placed: Coord[] };
+type AssignCtx = {
+  adj: boolean[][];
+  region: number;
+  colorOf: number[];
+  used: boolean[];
+};
 
 const N = 8;
 const HEARTS_START = 3;
@@ -20,6 +26,7 @@ const MISTAKE_FLASH_MS = 250;
 const MISTAKE_REVERT_MS = 450;
 const WIN_FLASH_MS = 700;
 const FAIL_FLASH_MS = 300;
+const BLOCK_PAD = 97;
 const NEW_GAME_PAD = 98;
 const HEART_PADS = [91, 92, 93];
 
@@ -45,16 +52,17 @@ const DIAG8: Coord[] = [
   [1, 1],
 ];
 
-const REGION_COLORS: RGB[] = [
+const PALETTE: RGB[] = [
   [127, 0, 0],
-  [127, 55, 0],
-  [110, 95, 0],
-  [0, 110, 25],
-  [0, 95, 95],
-  [0, 35, 120],
-  [70, 0, 120],
-  [120, 0, 70],
+  [127, 45, 0],
+  [110, 110, 0],
+  [0, 120, 0],
+  [0, 110, 110],
+  [0, 0, 127],
+  [90, 0, 127],
+  [127, 0, 90],
 ];
+const SIMILAR_THRESHOLD = 6000;
 const CAT_RGB: RGB = [127, 127, 127];
 const EMPTY_RGB: RGB = [0, 0, 0];
 const MISTAKE_RGB: RGB = [127, 0, 0];
@@ -63,7 +71,6 @@ const FAIL_RGB: RGB = [127, 0, 0];
 const HEART_RGB: RGB = [127, 0, 0];
 const HEART_OFF_RGB: RGB = [14, 0, 0];
 const NEW_GAME_RGB: RGB = [0, 70, 70];
-const BLOCK_PAD = 97;
 const BLOCK_ON_RGB: RGB = [90, 90, 90];
 const BLOCK_OFF_RGB: RGB = [12, 12, 12];
 const BLOCKED_RGB: RGB = [0, 0, 0];
@@ -75,6 +82,7 @@ export let hearts = HEARTS_START;
 export let solved = false;
 export let failed = false;
 export let showBlocked = false;
+export let colorOf: number[] = [];
 let mistakeTimer: ReturnType<typeof setTimeout> | null = null;
 
 function shuffle<T>(items: readonly T[]): T[] {
@@ -253,6 +261,90 @@ export function generatePuzzle(): Grid {
   return last ?? makeEmptyRegions();
 }
 
+function colorDistance(a: RGB, b: RGB): number {
+  return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+}
+
+export function similarColors(i: number, j: number): boolean {
+  const a = PALETTE[i];
+  const b = PALETTE[j];
+  if (!a || !b) return false;
+  return colorDistance(a, b) < SIMILAR_THRESHOLD;
+}
+
+function makeBoolMatrix(): boolean[][] {
+  return Array.from({ length: N }, () => Array.from({ length: N }, () => false));
+}
+
+function markAdjacentPair(adj: boolean[][], pair: [number, number]): void {
+  const rowA = adj[pair[0]];
+  const rowB = adj[pair[1]];
+  if (rowA) rowA[pair[1]] = true;
+  if (rowB) rowB[pair[0]] = true;
+}
+
+function addRegionEdges(adj: boolean[][], info: { grid: Grid; coord: Coord }): void {
+  const region = regionOf(info.grid, info.coord);
+  for (const other of adjacentRegions(info.grid, info.coord)) {
+    if (other !== region) markAdjacentPair(adj, [region, other]);
+  }
+}
+
+function regionAdjacency(grid: Grid): boolean[][] {
+  const adj = makeBoolMatrix();
+  for (const coord of ALL_COORDS) {
+    addRegionEdges(adj, { grid, coord });
+  }
+  return adj;
+}
+
+function isAdjacentRegion(adj: boolean[][], pair: [number, number]): boolean {
+  return adj[pair[0]]?.[pair[1]] === true;
+}
+
+function conflictsWithAssigned(ctx: AssignCtx, palette: number): boolean {
+  for (let other = 0; other < ctx.region; other++) {
+    const otherPalette = ctx.colorOf[other] ?? -1;
+    if (isAdjacentRegion(ctx.adj, [ctx.region, other]) && similarColors(palette, otherPalette)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function canUsePalette(ctx: AssignCtx, palette: number): boolean {
+  if (ctx.used[palette]) return false;
+  return !conflictsWithAssigned(ctx, palette);
+}
+
+function advanceAssign(ctx: AssignCtx, palette: number): AssignCtx {
+  const colors = [...ctx.colorOf];
+  colors[ctx.region] = palette;
+  const used = [...ctx.used];
+  used[palette] = true;
+  return { adj: ctx.adj, region: ctx.region + 1, colorOf: colors, used };
+}
+
+function assignFrom(ctx: AssignCtx): number[] | null {
+  if (ctx.region === N) return ctx.colorOf;
+  for (const palette of shuffle(RANGE_N)) {
+    if (!canUsePalette(ctx, palette)) continue;
+    const result = assignFrom(advanceAssign(ctx, palette));
+    if (result) return result;
+  }
+  return null;
+}
+
+function assignColors(grid: Grid): number[] {
+  const start: AssignCtx = {
+    adj: regionAdjacency(grid),
+    region: 0,
+    colorOf: Array.from({ length: N }, () => -1),
+    used: Array.from({ length: N }, () => false),
+  };
+  return assignFrom(start) ?? RANGE_N.slice();
+}
+
 function makeCatGrid(): boolean[][] {
   return Array.from({ length: N }, () => Array.from({ length: N }, () => false));
 }
@@ -277,10 +369,16 @@ function padToCoord(pad: number): Coord | null {
   return [N - padRow, padCol - 1];
 }
 
+function colorForRegion(region: number): RGB {
+  const index = colorOf[region];
+  if (index === undefined) return EMPTY_RGB;
+  return PALETTE[index] ?? EMPTY_RGB;
+}
+
 function cellRGB(coord: Coord): RGB {
   if (catHere(coord)) return CAT_RGB;
   if (showBlocked && violatesRules(coord)) return BLOCKED_RGB;
-  return REGION_COLORS[regionOf(regions, coord)] ?? EMPTY_RGB;
+  return colorForRegion(regionOf(regions, coord));
 }
 
 function drawCell(coord: Coord): void {
@@ -321,6 +419,7 @@ function clearMistakeTimer(): void {
 export function newGame(): void {
   clearMistakeTimer();
   regions = generatePuzzle();
+  colorOf = assignColors(regions);
   cats = makeCatGrid();
   catCount = 0;
   hearts = HEARTS_START;
