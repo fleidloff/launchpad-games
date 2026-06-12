@@ -63,6 +63,10 @@ const FAIL_RGB: RGB = [127, 0, 0];
 const HEART_RGB: RGB = [127, 0, 0];
 const HEART_OFF_RGB: RGB = [14, 0, 0];
 const NEW_GAME_RGB: RGB = [0, 70, 70];
+const BLOCK_PAD = 97;
+const BLOCK_ON_RGB: RGB = [90, 90, 90];
+const BLOCK_OFF_RGB: RGB = [12, 12, 12];
+const BLOCKED_RGB: RGB = [0, 0, 0];
 
 export let regions: Grid = [];
 export let cats: boolean[][] = [];
@@ -70,6 +74,7 @@ export let catCount = 0;
 export let hearts = HEARTS_START;
 export let solved = false;
 export let failed = false;
+export let showBlocked = false;
 let mistakeTimer: ReturnType<typeof setTimeout> | null = null;
 
 function shuffle<T>(items: readonly T[]): T[] {
@@ -274,6 +279,7 @@ function padToCoord(pad: number): Coord | null {
 
 function cellRGB(coord: Coord): RGB {
   if (catHere(coord)) return CAT_RGB;
+  if (showBlocked && violatesRules(coord)) return BLOCKED_RGB;
   return REGION_COLORS[regionOf(regions, coord)] ?? EMPTY_RGB;
 }
 
@@ -293,6 +299,18 @@ function drawHearts(): void {
   });
 }
 
+function drawBlockButton(): void {
+  setRGB(BLOCK_PAD, showBlocked ? BLOCK_ON_RGB : BLOCK_OFF_RGB);
+}
+
+function refreshCell(coord: Coord): void {
+  if (showBlocked) {
+    drawBoard();
+  } else {
+    drawCell(coord);
+  }
+}
+
 function clearMistakeTimer(): void {
   if (mistakeTimer !== null) {
     clearTimeout(mistakeTimer);
@@ -308,8 +326,10 @@ export function newGame(): void {
   hearts = HEARTS_START;
   solved = false;
   failed = false;
+  showBlocked = false;
   clearGrid();
   drawHearts();
+  drawBlockButton();
   setRGB(NEW_GAME_PAD, NEW_GAME_RGB);
   drawBoard();
 }
@@ -340,6 +360,16 @@ function violatesRules(coord: Coord): boolean {
     regionHasCat(coord) ||
     adjacentToCat(coord)
   );
+}
+
+export function isBlocked(coord: Coord): boolean {
+  return !catHere(coord) && violatesRules(coord);
+}
+
+export function toggleBlocked(): void {
+  showBlocked = !showBlocked;
+  drawBlockButton();
+  drawBoard();
 }
 
 function winLevel(): void {
@@ -383,14 +413,14 @@ function tryPlaceCat(coord: Coord): void {
   }
   setCat(coord, true);
   catCount++;
-  drawCell(coord);
+  refreshCell(coord);
   if (catCount === N) winLevel();
 }
 
 function removeCat(coord: Coord): void {
   setCat(coord, false);
   catCount--;
-  drawCell(coord);
+  refreshCell(coord);
 }
 
 export function tapCell(coord: Coord): void {
@@ -413,6 +443,7 @@ function handleGrid(pad: number): void {
 
 function handleControl(controller: number): void {
   if (controller === NEW_GAME_PAD) newGame();
+  else if (controller === BLOCK_PAD) toggleBlocked();
 }
 
 export const meowdoku: App = {

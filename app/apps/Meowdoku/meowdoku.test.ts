@@ -28,6 +28,11 @@ function catAt(coord: Coord): boolean {
   return meowdoku.cats[coord[0]]?.[coord[1]] === true;
 }
 
+function setRegionCell(coord: Coord, value: number): void {
+  const row = meowdoku.regions[coord[0]];
+  if (row) row[coord[1]] = value;
+}
+
 function distinctRegions(): Set<number> {
   const ids = new Set<number>();
   for (let r = 0; r < N; r++) {
@@ -120,6 +125,43 @@ describe("meowdoku.ts", () => {
     expect(meowdoku.solved).toBe(true);
     expect(meowdoku.catCount).toBe(N);
     expect(meowdoku.hearts).toBe(3);
+  });
+
+  it("marks cells in the same row, column or touching a cat as blocked", () => {
+    meowdoku.tapCell([0, 0]);
+    expect(meowdoku.isBlocked([0, 7])).toBe(true);
+    expect(meowdoku.isBlocked([7, 0])).toBe(true);
+    expect(meowdoku.isBlocked([1, 1])).toBe(true);
+  });
+
+  it("marks cells of an already-used color region as blocked", () => {
+    meowdoku.tapCell([0, 0]);
+    const region = regionAt([0, 0]);
+    setRegionCell([5, 5], region);
+    setRegionCell([5, 7], (region + 1) % N);
+    expect(meowdoku.isBlocked([5, 5])).toBe(true);
+    expect(meowdoku.isBlocked([5, 7])).toBe(false);
+  });
+
+  it("never reports a cell holding a cat as blocked", () => {
+    meowdoku.tapCell([0, 0]);
+    expect(meowdoku.isBlocked([0, 0])).toBe(false);
+  });
+
+  it("toggles the blocked overlay and redraws the whole board", () => {
+    vi.clearAllMocks();
+    meowdoku.toggleBlocked();
+    expect(meowdoku.showBlocked).toBe(true);
+    expect(grid.setRGB.mock.calls.length).toBeGreaterThanOrEqual(N * N);
+    meowdoku.toggleBlocked();
+    expect(meowdoku.showBlocked).toBe(false);
+  });
+
+  it("clears the blocked overlay when a new level starts", () => {
+    meowdoku.toggleBlocked();
+    expect(meowdoku.showBlocked).toBe(true);
+    meowdoku.newGame();
+    expect(meowdoku.showBlocked).toBe(false);
   });
 
   function firstCellOfRegion(target: number): Coord {
