@@ -7,7 +7,11 @@
       "Bash(echo \"exit: $?\")",
       "Bash(echo \"app.ts lint exit: $?\")",
       "Bash(echo \"lint exit: $?\")",
-      "Bash(cat > *)"
+      "Bash(cat > *)",
+      "Bash(cp /tmp/chesstest.mjs ./_chesstest.mjs)",
+      "Bash(node ./_chesstest.mjs)",
+      "Bash(rm -f ./_chesstest.mjs)",
+      "Bash(npm run *)"
     ]
   }
 }

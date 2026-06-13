@@ -6,6 +6,7 @@ import { logicMinesweeperApp } from "./apps/LogicMinesweeper/logicMinesweeper";
 import { fingerTwister } from "./apps/Twister/twister";
 import { reflexStorm } from "./apps/ReflexStorm/reflexStorm";
 import { meowdoku } from "./apps/Meowdoku/meowdoku";
+import { chess } from "./apps/Chess/chess";
 import { requestWakeLock } from "./util/wakeLock";
 
 void requestWakeLock();
@@ -18,6 +19,7 @@ manager.registerApp(49, fingerTwister);
 manager.registerApp(79, fourInARowApp);
 manager.registerApp(69, tactileSnakeApp);
 manager.registerApp(59, logicMinesweeperApp);
+manager.registerApp(19, chess);
 
 async function startApp(): Promise<void> {
   await initMidi(() => {

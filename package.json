@@ -21,6 +21,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "js-chess-engine": "^2.4.6",
     "webmidi": "^3.1.16"
   },
   "devDependencies": {

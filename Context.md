@@ -23,6 +23,26 @@ The project has the following directory layout:
         *   [FourInARow/](file:///home/fred/dev/launchpad-games/app/apps/FourInARow) - A 2-player Connect Four implementation on the grid.
         *   [TactileSnake/](file:///home/fred/dev/launchpad-games/app/apps/TactileSnake) - Classic Snake game utilizing relative matrix controls.
         *   [Meowdoku/](file:///home/fred/dev/launchpad-games/app/apps/Meowdoku) - A "find the cats" logic puzzle (Queens/Star-Battle style) on the full 8x8 grid split into 8 colored regions; place one cat per row, per column and per region, with no two cats touching (including diagonally). 3 hearts; rule-breaking placements cost a life.
+        *   [Chess/](file:///home/fred/dev/launchpad-games/app/apps/Chess) - Play chess against an AI on the 8x8 grid (squares A1-H8 map to pads 11-88). Built on the [js-chess-engine](https://github.com/josefjadrny/js-chess-engine) library for legal-move generation and the AI opponent. See the dedicated control scheme below.
+
+---
+
+## ♟️ Chess App Controls
+
+The Chess app turns the 8x8 grid into a chess board: square **A1** is the bottom-left pad **11**, **H8** is the top-right pad **88** (`padId = rank * 10 + file`). Empty squares are lit in a normal checkerboard pattern (dim light/dark); white pieces are bright white, black pieces are blue.
+
+*   **New game:** **long-press button 98**. This resets to the side-pick screen at any time.
+*   **Pick your side:** when a game starts, the first action is to pick a side by pressing any **white token** (to play White) or any **black token** (to play Black) on the board.
+*   **Difficulty:** set with buttons **91-95** (level 1-5, brighter = selected) on the side-pick screen, before picking a side.
+*   **Turn indicator:** once playing, the top row **91-98** lights up in the color of the side to move ("show turns").
+*   **Making a move (both sides):** first press the **from** square (the piece to move), then the **to** square; the turn ends on the second press.
+    *   On an **AI turn**, the engine's chosen move is precomputed and the **from** field (the token to move) is lit so you can play the AI's move on the physical board; after you press it, the **to** field lights up.
+*   **Illegal moves** are flashed **yellow** and ignored.
+*   **Check:** when check is announced, the checked **king** and the **checking piece(s)** are marked **red**. Checkmate/stalemate flashes the top row and any grid press starts a new game.
+
+> **Note on the right-column buttons (19-89):** these pads are reserved by the [AppManager](file:///home/fred/dev/launchpad-games/app/core/appManager.ts) as the app switcher and are protected in [grid.ts](file:///home/fred/dev/launchpad-games/app/core/grid.ts) — apps cannot light them. Turn indication therefore uses the top row (91-98) only.
+
+> ⚠️ **Button 99 (top-right corner):** this pad may be **lit** for decoration but must **never be used as an input — never read or act on a press of 99**. The Chess app lights it dimly and ignores it entirely.
 
 ---
 
