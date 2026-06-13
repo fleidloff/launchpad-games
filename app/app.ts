@@ -13,13 +13,13 @@ void requestWakeLock();
 
 const manager = new AppManager();
 
+manager.registerApp(19, chess);
 manager.registerApp(29, meowdoku);
 manager.registerApp(39, reflexStorm);
 manager.registerApp(49, fingerTwister);
 manager.registerApp(79, fourInARowApp);
 manager.registerApp(69, tactileSnakeApp);
 manager.registerApp(59, logicMinesweeperApp);
-manager.registerApp(19, chess);
 
 async function startApp(): Promise<void> {
   await initMidi(() => {

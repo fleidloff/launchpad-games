@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { NoteMessageEvent, ControlChangeMessageEvent } from "webmidi";
+import { Game, BoardConfig } from "js-chess-engine";
 import {
   chess,
   squareToPad,
@@ -157,4 +158,91 @@ describe("chess game flow", () => {
     longPress(98);
     expect(getPhase()).toBe("setup");
   });
+
+  it("ends the game in a draw on threefold repetition", () => {
+    const moveSpy = vi.spyOn(Game.prototype, "move").mockImplementation(() => ({} as unknown as BoardConfig));
+    const exportJsonSpy = vi.spyOn(Game.prototype, "exportJson").mockReturnValue({
+      pieces: { E2: "P", E7: "p", G1: "N" },
+      turn: "white",
+      isFinished: false,
+      check: false,
+      checkMate: false,
+      staleMate: false,
+      castling: { whiteShort: false, whiteLong: false, blackShort: false, blackLong: false },
+      enPassant: null,
+      halfMove: 0,
+      fullMove: 1,
+    });
+
+    const fens = [
+      "position1 w - - 0 1",
+      "position2 w - - 0 1",
+      "position1 w - - 0 2",
+      "position2 w - - 0 2",
+      "position1 w - - 0 3"
+    ];
+    let fenIndex = 0;
+    const exportFENSy = vi.spyOn(Game.prototype, "exportFEN").mockImplementation(() => {
+      const fen = fens[Math.min(fenIndex, fens.length - 1)];
+      fenIndex++;
+      return fen;
+    });
+
+    press("E2");
+    expect(getPhase()).toBe("humanFrom");
+
+    press("E2");
+    press("E4");
+    expect(getPhase()).toBe("humanFrom");
+
+    press("E2");
+    press("E4");
+    expect(getPhase()).toBe("humanFrom");
+
+    press("E2");
+    press("E4");
+    expect(getPhase()).toBe("humanFrom");
+
+    press("E2");
+    press("E4");
+    expect(getPhase()).toBe("over");
+
+    moveSpy.mockRestore();
+    exportJsonSpy.mockRestore();
+    exportFENSy.mockRestore();
+  });
+
+  it("ends the game in a draw on fifty-move rule", () => {
+    const moveSpy = vi.spyOn(Game.prototype, "move").mockImplementation(() => ({} as unknown as BoardConfig));
+    let halfMove = 0;
+    const exportJsonSpy = vi.spyOn(Game.prototype, "exportJson").mockImplementation(() => ({
+      pieces: { E2: "P", E7: "p", G1: "N" },
+      turn: "white",
+      isFinished: false,
+      check: false,
+      checkMate: false,
+      staleMate: false,
+      castling: { whiteShort: false, whiteLong: false, blackShort: false, blackLong: false },
+      enPassant: null,
+      halfMove,
+      fullMove: 1,
+    }));
+
+    press("E2");
+    expect(getPhase()).toBe("humanFrom");
+
+    halfMove = 99;
+    press("E2");
+    press("E4");
+    expect(getPhase()).toBe("humanFrom");
+
+    halfMove = 100;
+    press("E2");
+    press("E4");
+    expect(getPhase()).toBe("over");
+
+    moveSpy.mockRestore();
+    exportJsonSpy.mockRestore();
+  });
 });
+

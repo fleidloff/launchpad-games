@@ -36,7 +36,7 @@ type Palette = {
 const COLOR: Palette = {
   whitePiece: [127, 127, 110],
   blackPiece: [0, 50, 127],
-  lightSquare: [7, 6, 3],
+  lightSquare: [40, 40, 40],
   darkSquare: [0, 0, 0],
   selected: [0, 127, 0],
   dest: [0, 45, 8],
@@ -86,6 +86,7 @@ let aiMove: Move | null = null;
 let showMoves = true;
 let active = false;
 let illegalTimer: ReturnType<typeof setTimeout> | null = null;
+let positionHistory: string[] = [];
 
 export function squareToPad(square: string): number {
   const file = square.charCodeAt(0) - 64;
@@ -148,14 +149,22 @@ function kingAttack(attacker: Attacker, board: AttackBoard): boolean {
   return df <= 1 && dr <= 1 && df + dr > 0;
 }
 
-function scanCell(params: { file: number; rank: number; board: AttackBoard }): "hit" | "blocked" | "empty" {
+function scanCell(params: {
+  file: number;
+  rank: number;
+  board: AttackBoard;
+}): "hit" | "blocked" | "empty" {
   const { file, rank, board } = params;
   if (file === board.target.file && rank === board.target.rank) return "hit";
   if (board.occupied.has(key(file, rank))) return "blocked";
   return "empty";
 }
 
-function rayHits(params: { attacker: Attacker; board: AttackBoard; step: Step }): boolean {
+function rayHits(params: {
+  attacker: Attacker;
+  board: AttackBoard;
+  step: Step;
+}): boolean {
   const { attacker, board, step } = params;
   let file = attacker.file + step[0];
   let rank = attacker.rank + step[1];
@@ -168,7 +177,11 @@ function rayHits(params: { attacker: Attacker; board: AttackBoard; step: Step })
   return false;
 }
 
-function slideHits(params: { attacker: Attacker; board: AttackBoard; dirs: Step[] }): boolean {
+function slideHits(params: {
+  attacker: Attacker;
+  board: AttackBoard;
+  dirs: Step[];
+}): boolean {
   const { attacker, board, dirs } = params;
   return dirs.some((step) => rayHits({ attacker, board, step }));
 }
@@ -185,7 +198,10 @@ function queenAttack(attacker: Attacker, board: AttackBoard): boolean {
   return slideHits({ attacker, board, dirs: ALL_DIRS });
 }
 
-const ATTACK_FNS: Record<string, (attacker: Attacker, board: AttackBoard) => boolean> = {
+const ATTACK_FNS: Record<
+  string,
+  (attacker: Attacker, board: AttackBoard) => boolean
+> = {
   p: pawnAttack,
   n: knightAttack,
   b: bishopAttack,
@@ -203,7 +219,12 @@ function buildOccupied(pieces: Record<string, PieceSymbol>): Set<string> {
   return occupied;
 }
 
-function attacksKing(params: { square: string; piece: string; side: Side; board: AttackBoard }): boolean {
+function attacksKing(params: {
+  square: string;
+  piece: string;
+  side: Side;
+  board: AttackBoard;
+}): boolean {
   const { square, piece, side, board } = params;
   if (!isColor(piece, side)) return false;
   const attack = ATTACK_FNS[piece.toLowerCase()];
@@ -218,15 +239,22 @@ export function findAttackers(params: {
   byColor: Side;
 }): string[] {
   const { pieces, kingSquare, byColor } = params;
-  const board: AttackBoard = { target: coords(kingSquare), occupied: buildOccupied(pieces) };
+  const board: AttackBoard = {
+    target: coords(kingSquare),
+    occupied: buildOccupied(pieces),
+  };
   const result: string[] = [];
   for (const [square, piece] of Object.entries(pieces)) {
-    if (attacksKing({ square, piece, side: byColor, board })) result.push(square);
+    if (attacksKing({ square, piece, side: byColor, board }))
+      result.push(square);
   }
   return result;
 }
 
-export function findKingSquare(pieces: Record<string, PieceSymbol>, side: Side): string | null {
+export function findKingSquare(
+  pieces: Record<string, PieceSymbol>,
+  side: Side
+): string | null {
   const symbol = side === "white" ? "K" : "k";
   const found = Object.entries(pieces).find(([, piece]) => piece === symbol);
   return found ? found[0] : null;
@@ -272,7 +300,11 @@ function paintCheck(state: BoardConfig, paint: (square: string) => void): void {
   const kingSquare = findKingSquare(state.pieces, state.turn);
   if (!kingSquare) return;
   paint(kingSquare);
-  const attackers = findAttackers({ pieces: state.pieces, kingSquare, byColor: other(state.turn) });
+  const attackers = findAttackers({
+    pieces: state.pieces,
+    kingSquare,
+    byColor: other(state.turn),
+  });
   for (const square of attackers) paint(square);
 }
 
@@ -312,14 +344,20 @@ function overlaySelection(): void {
 function overlayAiFrom(): void {
   const mv = aiMove;
   if (!mv) return;
-  setRGBFlashing(squareToPad(mv.from), { rgb: COLOR.aiGuide, duration: GUIDE_FLASH_MS });
+  setRGBFlashing(squareToPad(mv.from), {
+    rgb: COLOR.aiGuide,
+    duration: GUIDE_FLASH_MS,
+  });
 }
 
 function overlayAiTo(): void {
   const mv = aiMove;
   if (!mv) return;
   setRGB(squareToPad(mv.from), COLOR.selected);
-  setRGBFlashing(squareToPad(mv.to), { rgb: COLOR.aiGuide, duration: GUIDE_FLASH_MS });
+  setRGBFlashing(squareToPad(mv.to), {
+    rgb: COLOR.aiGuide,
+    duration: GUIDE_FLASH_MS,
+  });
 }
 
 const OVERLAYS: Partial<Record<Phase, () => void>> = {
@@ -381,7 +419,8 @@ function enterGameOver(state: BoardConfig): void {
 }
 
 function computeAiMove(): Move | null {
-  const result = game.ai({ level, play: false });
+  const randomness = 40 - 5 * level;
+  const result = game.ai({ level, play: false, randomness });
   const entry = Object.entries(result.move)[0];
   return entry ? { from: entry[0], to: entry[1] } : null;
 }
@@ -396,13 +435,35 @@ function startAiTurn(): void {
   phase = "aiFrom";
 }
 
-function beginTurn(): void {
+function getRepetitionKey(): string {
+  return game.exportFEN().split(" ").slice(0, 4).join(" ");
+}
+
+function getGameOverConfig(state: BoardConfig, isDrawState: boolean): BoardConfig {
+  return {
+    ...state,
+    isFinished: true,
+    checkMate: state.checkMate && !isDrawState,
+  };
+}
+
+function checkGameOver(): boolean {
   const state = currentState();
-  if (state.isFinished) {
-    enterGameOver(state);
-    return;
+  const key = getRepetitionKey();
+  positionHistory.push(key);
+  const isRep = positionHistory.filter((k) => k === key).length >= 3;
+  const isFifty = state.halfMove >= 100;
+  const isDrawState = isRep || isFifty;
+  if (state.isFinished || isDrawState) {
+    enterGameOver(getGameOverConfig(state, isDrawState));
+    return true;
   }
-  if (state.turn === humanSide) startHumanTurn();
+  return false;
+}
+
+function beginTurn(): void {
+  if (checkGameOver()) return;
+  if (currentState().turn === humanSide) startHumanTurn();
   else startAiTurn();
   repaint();
 }
@@ -455,7 +516,8 @@ function handleHumanTo(pad: number): void {
   if (!from) return;
   const square = padToSquare(pad);
   if (square === from) return clearSelection();
-  if (legalDests(from).includes(square)) return commitMove({ from, to: square });
+  if (legalDests(from).includes(square))
+    return commitMove({ from, to: square });
   reselect(pad, square);
 }
 
@@ -492,6 +554,7 @@ function newGame(): void {
   game = new Game();
   selectedFrom = null;
   aiMove = null;
+  positionHistory = [];
   phase = "setup";
   renderSetup();
 }
