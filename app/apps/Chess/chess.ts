@@ -27,6 +27,8 @@ type Palette = {
   draw: RGB;
   diffActive: RGB;
   diffIdle: RGB;
+  toggleOn: RGB;
+  toggleOff: RGB;
   logo: RGB;
   off: RGB;
 };
@@ -46,6 +48,8 @@ const COLOR: Palette = {
   draw: [40, 40, 40],
   diffActive: [0, 110, 110],
   diffIdle: [0, 18, 18],
+  toggleOn: [80, 80, 0],
+  toggleOff: [12, 12, 0],
   logo: [12, 4, 14],
   off: [0, 0, 0],
 };
@@ -57,6 +61,7 @@ const ILLEGAL_RESTORE_MS = 650;
 const GUIDE_FLASH_MS = 600;
 const LOGO_PAD = 99;
 const NEW_GAME_PAD = 98;
+const MOVES_TOGGLE_PAD = 97;
 
 const DIAG: Step[] = [
   [1, 1],
@@ -78,6 +83,7 @@ let level = DEFAULT_LEVEL;
 let phase: Phase = "setup";
 let selectedFrom: string | null = null;
 let aiMove: Move | null = null;
+let showMoves = true;
 let active = false;
 let illegalTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -257,13 +263,25 @@ function markRed(square: string): void {
   setRGB(squareToPad(square), COLOR.check);
 }
 
-function renderCheck(state: BoardConfig): void {
+function markRedFlashing(square: string): void {
+  setRGBFlashing(squareToPad(square), { rgb: COLOR.check });
+}
+
+function paintCheck(state: BoardConfig, paint: (square: string) => void): void {
   if (!state.check) return;
   const kingSquare = findKingSquare(state.pieces, state.turn);
   if (!kingSquare) return;
-  markRed(kingSquare);
+  paint(kingSquare);
   const attackers = findAttackers({ pieces: state.pieces, kingSquare, byColor: other(state.turn) });
-  for (const square of attackers) markRed(square);
+  for (const square of attackers) paint(square);
+}
+
+function renderCheck(state: BoardConfig): void {
+  paintCheck(state, markRed);
+}
+
+function renderCheckmate(state: BoardConfig): void {
+  paintCheck(state, markRedFlashing);
 }
 
 function renderTopBar(state: BoardConfig): void {
@@ -276,14 +294,18 @@ function renderDifficulty(): void {
     setRGB(91 + i, level === i + 1 ? COLOR.diffActive : COLOR.diffIdle);
   }
   setRGB(96, COLOR.off);
-  setRGB(97, COLOR.off);
   setRGB(98, COLOR.off);
+}
+
+function renderMovesToggle(): void {
+  setRGB(MOVES_TOGGLE_PAD, showMoves ? COLOR.toggleOn : COLOR.toggleOff);
 }
 
 function overlaySelection(): void {
   const from = selectedFrom;
   if (!from) return;
   setRGB(squareToPad(from), COLOR.selected);
+  if (!showMoves) return;
   for (const dest of legalDests(from)) setRGB(squareToPad(dest), COLOR.dest);
 }
 
@@ -311,12 +333,14 @@ function repaint(): void {
   drawBoard(state.pieces);
   renderCheck(state);
   renderTopBar(state);
+  renderMovesToggle();
   OVERLAYS[phase]?.();
 }
 
 function renderSetup(): void {
   drawBoard(currentState().pieces);
   renderDifficulty();
+  renderMovesToggle();
   setRGB(LOGO_PAD, COLOR.logo);
 }
 
@@ -352,7 +376,7 @@ function enterGameOver(state: BoardConfig): void {
   selectedFrom = null;
   aiMove = null;
   drawBoard(state.pieces);
-  renderCheck(state);
+  if (state.checkMate) renderCheckmate(state);
   flashEndIndicator(state);
 }
 
@@ -481,12 +505,21 @@ function setLevel(value: number): void {
   renderDifficulty();
 }
 
+function toggleShowMoves(): void {
+  showMoves = !showMoves;
+  refresh();
+}
+
 export function getPhase(): Phase {
   return phase;
 }
 
 export function getHumanSide(): Side {
   return humanSide;
+}
+
+export function getShowMoves(): boolean {
+  return showMoves;
 }
 
 export const chess: App = {
@@ -512,6 +545,7 @@ export const chess: App = {
     if (velocity <= 0) return;
     const controller = e.controller.number;
     if (isSetupDifficulty(controller)) setLevel(controller - 90);
+    else if (controller === MOVES_TOGGLE_PAD) toggleShowMoves();
   },
 
   onControlChangeLongPress(e: ControlChangeMessageEvent): void {

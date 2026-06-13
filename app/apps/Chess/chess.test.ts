@@ -9,6 +9,7 @@ import {
   findKingSquare,
   getPhase,
   getHumanSide,
+  getShowMoves,
 } from "./chess";
 
 vi.mock("../../core/grid", () => ({
@@ -30,6 +31,18 @@ function ccEvent(controller: number): ControlChangeMessageEvent {
     controller: { number: controller },
     message: { data: [0, 0, 127] },
   } as unknown as ControlChangeMessageEvent;
+}
+
+function press(square: string): void {
+  chess.onNoteOn?.(noteEvent(squareToPad(square)));
+}
+
+function control(controller: number): void {
+  chess.onControlChange?.(ccEvent(controller));
+}
+
+function longPress(controller: number): void {
+  chess.onControlChangeLongPress?.(ccEvent(controller));
 }
 
 describe("chess square mapping", () => {
@@ -85,35 +98,63 @@ describe("chess game flow", () => {
   });
 
   it("picks white when a white token is pressed and lets white move", () => {
-    chess.onNoteOn?.(noteEvent(squareToPad("E2")));
+    press("E2");
     expect(getHumanSide()).toBe("white");
     expect(getPhase()).toBe("humanFrom");
   });
 
   it("picks black when a black token is pressed and AI moves first", () => {
-    chess.onNoteOn?.(noteEvent(squareToPad("E7")));
+    press("E7");
     expect(getHumanSide()).toBe("black");
     expect(getPhase()).toBe("aiFrom");
   });
 
   it("selects a piece then completes a legal human move", () => {
-    chess.onNoteOn?.(noteEvent(squareToPad("E2")));
-    chess.onNoteOn?.(noteEvent(squareToPad("E2")));
+    press("E2");
+    press("E2");
     expect(getPhase()).toBe("humanTo");
-    chess.onNoteOn?.(noteEvent(squareToPad("E4")));
+    press("E4");
     expect(getPhase()).toBe("aiFrom");
   });
 
+  it("releases the selection when the same field is pressed, allowing a new token", () => {
+    press("E2");
+    press("E2");
+    expect(getPhase()).toBe("humanTo");
+    press("E2");
+    expect(getPhase()).toBe("humanFrom");
+    press("D2");
+    press("D4");
+    expect(getPhase()).toBe("aiFrom");
+  });
+
+  it("reselects directly when a different own token is pressed", () => {
+    press("E2");
+    press("E2");
+    press("D2");
+    expect(getPhase()).toBe("humanTo");
+    press("D4");
+    expect(getPhase()).toBe("aiFrom");
+  });
+
+  it("toggles showing possible moves with button 97", () => {
+    expect(getShowMoves()).toBe(true);
+    control(97);
+    expect(getShowMoves()).toBe(false);
+    control(97);
+    expect(getShowMoves()).toBe(true);
+  });
+
   it("sets difficulty during setup via buttons 91-95", () => {
-    chess.onControlChange?.(ccEvent(94));
-    chess.onNoteOn?.(noteEvent(squareToPad("E7")));
+    control(94);
+    press("E7");
     expect(getHumanSide()).toBe("black");
   });
 
   it("long pressing 98 starts a new game from setup", () => {
-    chess.onNoteOn?.(noteEvent(squareToPad("E2")));
+    press("E2");
     expect(getPhase()).toBe("humanFrom");
-    chess.onControlChangeLongPress?.(ccEvent(98));
+    longPress(98);
     expect(getPhase()).toBe("setup");
   });
 });

@@ -34,11 +34,14 @@ The Chess app turns the 8x8 grid into a chess board: square **A1** is the bottom
 *   **New game:** **long-press button 98**. This resets to the side-pick screen at any time.
 *   **Pick your side:** when a game starts, the first action is to pick a side by pressing any **white token** (to play White) or any **black token** (to play Black) on the board.
 *   **Difficulty:** set with buttons **91-95** (level 1-5, brighter = selected) on the side-pick screen, before picking a side.
-*   **Turn indicator:** once playing, the top row **91-98** lights up in the color of the side to move ("show turns").
+*   **Turn indicator:** once playing, the top row lights up in the color of the side to move ("show turns"). Button 97 is reserved as the show-moves toggle (see below), so the indicator spans **91-96 and 98**.
 *   **Making a move (both sides):** first press the **from** square (the piece to move), then the **to** square; the turn ends on the second press.
     *   On an **AI turn**, the engine's chosen move is precomputed and the **from** field (the token to move) is lit so you can play the AI's move on the physical board; after you press it, the **to** field lights up.
+    *   **Changing your mind:** while your own piece is selected, press the **same field again** to release it (you can then pick a different token), or press any other own piece to reselect directly.
+*   **Show possible moves toggle:** button **97** toggles whether the legal destination squares are highlighted when you select a piece. The 97 LED is bright when highlighting is on, dim when off.
 *   **Illegal moves** are flashed **yellow** and ignored.
-*   **Check:** when check is announced, the checked **king** and the **checking piece(s)** are marked **red**. Checkmate/stalemate flashes the top row and any grid press starts a new game.
+*   **Check:** when check is announced, the checked **king** and the **checking piece(s)** are marked **solid red**.
+*   **Checkmate:** the mated **king** and the **mating piece(s)** **flash red** (distinct from a regular check), and the top row flashes red. Stalemate/draw flashes the top row in a neutral color. Any grid press starts a new game.
 
 > **Note on the right-column buttons (19-89):** these pads are reserved by the [AppManager](file:///home/fred/dev/launchpad-games/app/core/appManager.ts) as the app switcher and are protected in [grid.ts](file:///home/fred/dev/launchpad-games/app/core/grid.ts) — apps cannot light them. Turn indication therefore uses the top row (91-98) only.
 
